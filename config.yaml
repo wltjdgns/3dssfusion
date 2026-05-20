@@ -1,0 +1,125 @@
+# ============================================================
+# Azure Kinect 실시간 탐지 시스템 설정
+# mode 한 줄만 바꾸면 전체 동작 모드 전환
+# ============================================================
+
+mode: "fusion"   # "rgb" | "depth" | "fusion"
+
+kinect:
+  device_index: 0
+  color_resolution: "1080P"
+  depth_mode: "NFOV_UNBINNED"
+  camera_fps: 30
+  synchronized_images_only: true
+  color_format: "BGRA32"
+  wired_sync_mode: "STANDALONE"
+  depth_delay_off_color_usec: 0
+
+gpu:
+  rgb_device: "cuda:0"
+  depth_device: "cuda:0"
+
+rgb_models:
+  active: ["yolov11", "rtdetrv2"]
+
+  yolov11:
+    enabled: true
+    weights: "weights/yolo/yolo11x.pt"
+    model_size: "x"
+    imgsz: 640
+    half: true
+    conf: 0.25
+    iou: 0.45
+    classes: null
+    augment: false
+    stream: true
+
+  rtdetrv2:
+    enabled: true
+    weights: "weights/rtdetrv2/rtdetrv2_r50vd.pth"
+    backbone: "r50vd"
+    imgsz: 640
+    half: true
+    conf: 0.3
+    iou: 0.5
+
+  grounding_dino:
+    enabled: false
+    config_file: "weights/grounding_dino/GroundingDINO_SwinT_OGC.py"
+    weights: "weights/grounding_dino/groundingdino_swint_ogc.pth"
+    text_prompt: "person . car . truck . drone . uav ."
+    box_threshold: 0.35
+    text_threshold: 0.25
+    half: false
+
+depth_model:
+  pointpillars:
+    enabled: true
+    cfg_file: "third_party/OpenPCDet/tools/cfgs/custom_models/pointpillar_kinect.yaml"
+    weights: "weights/pointpillars/pointpillar_7728.pth"
+    point_cloud_range: [-5.0, -5.0, -1.0, 5.0, 5.0, 3.0]
+    voxel_size: [0.05, 0.05, 0.1]
+    max_points_per_voxel: 32
+    max_voxels: 16000
+    score_threshold: 0.3
+    nms_threshold: 0.1
+
+pointcloud:
+  min_range_m: 0.3
+  max_range_m: 5.5
+  max_points: 200000
+  voxel_downsample_size: 0.02
+  remove_ground: true
+  ground_z_threshold: -0.3
+
+fusion:
+  strategy: "weighted_box_fusion"
+  rgb_weight: 0.65
+  depth_weight: 0.35
+  iou_threshold: 0.5
+  depth_confirmation_only: false
+  depth_augment_rgb: true
+  min_depth_points: 10
+
+postprocess:
+  tracker:
+    enabled: true
+    type: "bytetrack"
+    track_thresh: 0.5
+    track_buffer: 30
+    match_thresh: 0.8
+    min_box_area: 100
+
+  visualizer:
+    enabled: true
+    show_window: true
+    window_name: "Kinect Detection"
+    show_depth_colormap: true
+    show_fps: true
+    show_gpu_usage: true
+    save_video: false
+    output_path: "data/results/"
+    font_scale: 0.6
+    line_thickness: 2
+
+  logger:
+    enabled: true
+    log_dir: "data/results/"
+    log_format: "jsonl"
+    log_every_n_frames: 1
+
+performance:
+  target_fps: 20
+  rgb_inference_parallel: true
+  depth_inference_async: true
+  frame_queue_size: 3
+  skip_depth_every_n: 1
+
+# 드론 탐지 확장 설정 (enabled: false → true로 변경하여 활성화)
+drone_extension:
+  enabled: false
+  yolov11_weights: "weights/yolo/yolo11x_drone_ft.pt"
+  gdino_prompt: "drone . uav . quadcopter . multirotor ."
+  imgsz: 1280
+  min_box_area: 16
+  conf: 0.15

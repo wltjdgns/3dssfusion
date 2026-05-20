@@ -1,0 +1,78 @@
+# ============================================================
+# Azure Kinect Detection — .gitignore
+# ============================================================
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+MANIFEST
+
+# Virtual envs
+.env
+.venv/
+env/
+venv/
+
+# Model weights (track directory structure, not binaries)
+# weights/ 디렉토리는 추적하되 실제 가중치 파일은 제외
+weights/**/*.pt
+weights/**/*.pth
+weights/**/*.onnx
+weights/**/*.engine
+weights/**/*.trt
+weights/**/*.bin
+weights/**/*.safetensors
+!weights/**/.gitkeep
+
+# Third-party build artifacts
+third_party/OpenPCDet/build/
+third_party/OpenPCDet/dist/
+third_party/OpenPCDet/*.egg-info/
+third_party/GroundingDINO/build/
+third_party/GroundingDINO/dist/
+third_party/GroundingDINO/*.egg-info/
+
+# Data outputs
+data/results/*.mp4
+data/results/*.avi
+data/results/*.jsonl
+data/results/*.json
+data/results/*.csv
+data/raw/
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# CUDA profiling
+*.nsys-rep
+*.nvvp
+*.sqlite
+
+# Misc large binaries
+*.ply
+*.pcd

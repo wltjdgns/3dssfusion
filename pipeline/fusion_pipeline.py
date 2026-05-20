@@ -1,0 +1,236 @@
+"""
+FusionPipeline: RGB + Depth Fusion 핵심 파이프라인
+- ThreadPoolExecutor(max_workers=3)로 RGB/Depth 병렬 추론
+- FusionDetector.fuse()로 Late Fusion
+- skip_depth_every_n: depth 추론 주기적 스킵
+- frame_queue_size: Queue 버퍼링
+"""
+from __future__ import annotations
+
+import importlib
+import queue
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import TYPE_CHECKING, Generator, List, Optional
+
+import numpy as np
+from loguru import logger
+
+if TYPE_CHECKING:
+    from models import DetectionResult, BaseDetector
+    from kinect import KinectCapture, KinectCalibration, PointCloudConverter, CaptureFrame
+
+
+_MODEL_REGISTRY: dict = {
+    "yolov11": ("models.rgb", "YOLOv11Detector"),
+    "rtdetrv2": ("models.rgb", "RTDETRv2Detector"),
+    "grounding_dino": ("models.rgb", "GroundingDINODetector"),
+}
+
+
+def _build_rgb_detector(name: str, model_cfg: dict) -> "BaseDetector":
+    if name not in _MODEL_REGISTRY:
+        raise ValueError(f"알 수 없는 RGB 모델: {name}")
+    module_path, class_name = _MODEL_REGISTRY[name]
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)(model_cfg)
+
+
+class FusionPipeline:
+    """RGB + Depth Late Fusion 파이프라인."""
+
+    def __init__(self, config: dict) -> None:
+        self._cfg = config
+        self._rgb_cfg: dict = config.get("rgb", {})
+        self._depth_cfg: dict = config.get("depth", {})
+        self._fusion_cfg: dict = config.get("fusion", {})
+        self._pipeline_cfg: dict = config.get("pipeline", {})
+
+        self._capture: "KinectCapture | None" = None
+        self._calibration: "KinectCalibration | None" = None
+        self._converter: "PointCloudConverter | None" = None
+        self._rgb_detectors: List["BaseDetector"] = []
+        self._depth_detector = None
+        self._fusion_detector = None
+        self._fps_counter = None
+
+        self._frame_count: int = 0
+        self._last_depth_result: Optional["DetectionResult"] = None
+        self._last_points_3d: Optional[np.ndarray] = None
+        self._depth_cache_lock = threading.Lock()  # _last_depth_result 동시 접근 보호
+
+        self._skip_depth_every_n: int = self._pipeline_cfg.get("skip_depth_every_n", 1)
+        self._frame_queue_size: int = self._pipeline_cfg.get("frame_queue_size", 4)
+        self._depth_async: bool = self._depth_cfg.get("inference_async", True)
+        self._warmup_frames: int = self._pipeline_cfg.get("warmup_frames", 5)
+
+        self._frame_queue: queue.Queue = queue.Queue(maxsize=self._frame_queue_size)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def setup(self) -> None:
+        """모든 RGB + Depth 모델 로드, KinectCapture 오픈, warmup."""
+        from kinect import KinectCapture, KinectCalibration, PointCloudConverter
+        from models.depth import PointPillarsDetector
+        from fusion.frustum_projector import FrustumProjector
+        from fusion.fusion_detector import FusionDetector
+        from utils.fps_counter import FPSCounter
+
+        logger.info("FusionPipeline setup 시작")
+
+        # Kinect 초기화
+        kinect_cfg = self._cfg.get("kinect", {})
+        self._capture = KinectCapture(kinect_cfg)
+        self._capture.open()
+        self._calibration = KinectCalibration(kinect_cfg)
+        self._converter = PointCloudConverter(self._calibration)
+
+        # RGB 모델 로드
+        active_models: List[str] = self._rgb_cfg.get("active_models", [])
+        models_cfg: dict = self._rgb_cfg.get("models", {})
+        for name in active_models:
+            det = _build_rgb_detector(name, models_cfg.get(name, {}))
+            det.load()
+            self._rgb_detectors.append(det)
+            logger.info(f"RGB 모델 로드: {name}")
+
+        # Depth 모델 로드
+        pp_cfg = self._depth_cfg.get("pointpillars", {})
+        self._depth_detector = PointPillarsDetector(pp_cfg)
+        self._depth_detector.load()
+        logger.info("PointPillars 모델 로드 완료")
+
+        # Fusion 구성
+        projector = FrustumProjector(self._calibration)
+        self._fusion_detector = FusionDetector(
+            rgb_detectors=self._rgb_detectors,
+            depth_detector=self._depth_detector,
+            projector=projector,
+            config=self._fusion_cfg,
+        )
+
+        self._fps_counter = FPSCounter()
+
+        # Warmup
+        self._run_warmup()
+        logger.info("FusionPipeline setup 완료")
+
+    def run_once(self) -> "DetectionResult":
+        """프레임 1장을 처리하고 Fusion 결과를 반환합니다."""
+        from models import DetectionResult
+
+        frame = self._capture.get_frame()
+        self._frame_count += 1
+        image_shape = (frame.color.shape[0], frame.color.shape[1])
+
+        # Depth 스킵 여부 판단
+        run_depth = (self._frame_count % self._skip_depth_every_n == 0)
+
+        rgb_results: List["DetectionResult"] = []
+        depth_result: Optional["DetectionResult"] = None
+        points_3d: Optional[np.ndarray] = None
+
+        # ThreadPoolExecutor로 RGB / Depth 병렬 추론
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # RGB 모델들 각각 submit
+            rgb_futures: List[Future] = [
+                executor.submit(det.detect, frame.color)
+                for det in self._rgb_detectors
+            ]
+
+            # Depth 추론 (스킵 안 할 때만)
+            depth_future: Optional[Future] = None
+            if run_depth and self._depth_detector is not None:
+                pc = self._converter.convert(frame.depth, frame.color)
+                depth_future = executor.submit(self._depth_detector.detect, pc)
+                points_3d = pc  # FrustumProjector용
+
+            # RGB 결과 수집
+            for future in rgb_futures:
+                try:
+                    rgb_results.append(future.result())
+                except Exception as exc:
+                    logger.warning(f"RGB 추론 실패: {exc}")
+
+            # Depth 결과 수집
+            if depth_future is not None:
+                try:
+                    depth_result = depth_future.result()
+                    with self._depth_cache_lock:
+                        self._last_depth_result = depth_result
+                        self._last_points_3d = points_3d
+                except Exception as exc:
+                    logger.warning(f"Depth 추론 실패: {exc}")
+                    with self._depth_cache_lock:
+                        depth_result = self._last_depth_result
+                        points_3d = self._last_points_3d
+            else:
+                # 이전 depth 결과 재사용 (thread-safe read)
+                with self._depth_cache_lock:
+                    depth_result = self._last_depth_result
+                    points_3d = self._last_points_3d
+
+        # Fusion
+        fused = self._fusion_detector.fuse(
+            rgb_results=rgb_results,
+            depth_result=depth_result,
+            points_3d=points_3d,
+            frame_id=frame.frame_id,
+            image_shape=image_shape,
+        )
+
+        self._fps_counter.tick()
+
+        # Queue 버퍼 (비블로킹)
+        try:
+            self._frame_queue.put_nowait(fused)
+        except queue.Full:
+            try:
+                self._frame_queue.get_nowait()
+                self._frame_queue.put_nowait(fused)
+            except queue.Empty:
+                pass
+
+        return fused
+
+    def run_stream(self) -> Generator["DetectionResult", None, None]:
+        """연속 프레임을 처리하는 제너레이터."""
+        while True:
+            yield self.run_once()
+
+    def shutdown(self) -> None:
+        """모든 리소스 해제."""
+        logger.info("FusionPipeline shutdown")
+        if self._capture is not None:
+            self._capture.close()
+        for det in self._rgb_detectors:
+            try:
+                det.unload()
+            except Exception:
+                pass
+        if self._depth_detector is not None:
+            try:
+                self._depth_detector.unload()
+            except Exception:
+                pass
+        self._rgb_detectors.clear()
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _run_warmup(self) -> None:
+        """Warmup 프레임으로 모델 예열."""
+        logger.info(f"Warmup 시작 ({self._warmup_frames} 프레임)")
+        dummy_shape = (1080, 1920, 3)
+        dummy_img = np.zeros(dummy_shape, dtype=np.uint8)
+
+        for i in range(self._warmup_frames):
+            for det in self._rgb_detectors:
+                try:
+                    det.detect(dummy_img)
+                except Exception:
+                    pass
+        logger.info("Warmup 완료")
