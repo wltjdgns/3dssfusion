@@ -124,18 +124,18 @@ def download_pointpillars() -> None:
 
 def download_rtdetrv2() -> None:
     _print("[bold cyan]RT-DETRv2 가중치 다운로드 중 (HuggingFace Hub)...[/bold cyan]" if _RICH else "RT-DETRv2 가중치 다운로드 중 (HuggingFace Hub)...")
-    hf_model_id = "PekingU/rtdetr_v2_r50vd"
+    hf_model_id = "PekingU/rtdetr_r50vd"
     dest_dir = os.path.join(_WEIGHTS_DIR, "rtdetrv2")
     cache_marker = os.path.join(dest_dir, ".hf_cached")
     if os.path.exists(cache_marker):
         _print(f"[yellow]스킵 (이미 존재): {dest_dir}[/yellow]" if _RICH else f"스킵: {dest_dir}")
         return
     try:
-        from transformers import RTDetrImageProcessor, RTDetrV2ForObjectDetection
+        from transformers import RTDetrImageProcessor, RTDetrForObjectDetection
         _ensure_dir(dest_dir)
         _print(f"  모델 ID: {hf_model_id}" if not _RICH else f"  [dim]모델 ID: {hf_model_id}[/dim]")
         RTDetrImageProcessor.from_pretrained(hf_model_id)
-        RTDetrV2ForObjectDetection.from_pretrained(hf_model_id)
+        RTDetrForObjectDetection.from_pretrained(hf_model_id)
         open(cache_marker, "w").close()
         _print("[green]RT-DETRv2 다운로드 완료 (~/.cache/huggingface/).[/green]" if _RICH else "RT-DETRv2 다운로드 완료 (~/.cache/huggingface/).")
     except Exception as e:

@@ -10,10 +10,10 @@ from PIL import Image
 
 from ..base import BaseDetector, Detection, DetectionResult
 
-_DEFAULT_HF_MODEL = "PekingU/rtdetr_v2_r50vd"
+_DEFAULT_HF_MODEL = "PekingU/rtdetr_r50vd"
 
 try:
-    from transformers import RTDetrImageProcessor, RTDetrV2ForObjectDetection
+    from transformers import RTDetrImageProcessor, RTDetrForObjectDetection
     _TRANSFORMERS_AVAILABLE = True
 except ImportError:
     _TRANSFORMERS_AVAILABLE = False
@@ -41,7 +41,7 @@ class RTDETRv2Detector(BaseDetector):
         logger.info(f"[RTDETRv2] loading from: {model_id}")
 
         self._processor = RTDetrImageProcessor.from_pretrained(model_id)
-        self._model = RTDetrV2ForObjectDetection.from_pretrained(model_id).to(self.device)
+        self._model = RTDetrForObjectDetection.from_pretrained(model_id).to(self.device)
         if self.half:
             self._model = self._model.half()
         self._model.eval()
