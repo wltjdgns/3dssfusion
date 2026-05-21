@@ -143,16 +143,34 @@ python scripts/download_weights.py --model grounding_dino
 Depth / Fusion 모드에서 PointPillars를 사용하려면 OpenPCDet 빌드가 필요합니다.  
 RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 
-```bash
-# x64 Native Tools Command Prompt for VS 2022에서 실행
-git clone https://github.com/open-mmlab/OpenPCDet.git third_party/OpenPCDet
-pip install spconv-cu118==2.3.6
-cd third_party/OpenPCDet
-pip install -r requirements.txt
+**반드시 Windows CMD에서 실행합니다 (PowerShell 불가).**
+
+```cmd
+:: 1. MSVC 환경 활성화 (폴더명은 설치된 VS 버전에 따라 다름: 18, 2022 등)
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
+set MSSdk=1
+
+:: 2. OpenPCDet 클론 (이미 존재하면 생략)
+git clone https://github.com/open-mmlab/OpenPCDet.git third_party/OpenPCDet
+
+:: 3. PyTorch 2.1.2 호환 setuptools 설치 (pkg_resources 오류 방지)
+pip install "setuptools==69.5.1"
+
+:: 4. OpenPCDet 의존성 설치 (SharedArray는 Windows 미지원 — 무시)
+pip install tensorboardX easydict scikit-image pyquaternion
+
+:: 5. OpenPCDet 빌드
+cd third_party\OpenPCDet
 python setup.py develop
-cd ../..
+cd ..\..
 ```
+
+> **SharedArray 빌드 실패는 무시합니다.** `sys/mman.h` POSIX 헤더를 사용하는 Linux 전용 패키지로,  
+> PointPillars 추론(inference)에는 사용되지 않습니다.
+
+> **VS 폴더명 확인:** `dir "C:\Program Files (x86)\Microsoft Visual Studio\" /b` 로 폴더명 확인 후  
+> vcvars64.bat 경로의 `18` 부분을 실제 폴더명(예: `2022`)으로 변경합니다.
 
 ---
 
@@ -852,18 +870,29 @@ performance:
 
 ### OpenPCDet 설치 오류
 
-```
-error: command 'cl.exe' failed
+**`error: command 'cl.exe' failed`**
+
+→ Windows CMD에서 vcvars64.bat을 먼저 실행해야 합니다. PowerShell에서는 `call`이 동작하지 않습니다.
+
+```cmd
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set DISTUTILS_USE_SDK=1
+set MSSdk=1
+python setup.py develop
 ```
 
-→ **Visual Studio x64 Native Tools Command Prompt** 에서 설치 명령을 실행합니다.  
-일반 CMD나 PowerShell에서는 cl.exe를 찾지 못합니다.
+**`ModuleNotFoundError: No module named 'pkg_resources'`**
 
-```bash
-# CUDA 버전에 맞는 spconv 확인
-nvcc --version   # CUDA 11.8 → spconv-cu118
-pip install spconv-cu118==2.3.6
+→ PyTorch 2.1.2의 `cpp_extension.py`가 구버전 setuptools API를 사용합니다.
+
+```cmd
+pip install "setuptools==69.5.1"
+python setup.py develop
 ```
+
+**`SharedArray 빌드 실패`**
+
+→ `sys/mman.h` POSIX 헤더 의존으로 Windows에서는 빌드 불가입니다. 추론에 사용되지 않으므로 무시하고 진행합니다.
 
 ---
 

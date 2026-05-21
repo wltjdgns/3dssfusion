@@ -33,10 +33,14 @@ weights/**/*.bin
 weights/**/*.safetensors
 !weights/**/.gitkeep
 
-# Third-party build artifacts
+# Third-party — OpenPCDet source (custom_models/만 추적)
+third_party/OpenPCDet/*
+!third_party/OpenPCDet/tools/
+third_party/OpenPCDet/tools/*
+!third_party/OpenPCDet/tools/cfgs/
+third_party/OpenPCDet/tools/cfgs/*
+!third_party/OpenPCDet/tools/cfgs/custom_models/
 third_party/OpenPCDet/build/
-third_party/OpenPCDet/dist/
-third_party/OpenPCDet/*.egg-info/
 third_party/GroundingDINO/build/
 third_party/GroundingDINO/dist/
 third_party/GroundingDINO/*.egg-info/
