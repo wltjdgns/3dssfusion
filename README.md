@@ -1,7 +1,7 @@
 # Azure Kinect DK 실시간 객체 탐지 시스템
 
 Azure Kinect DK의 RGB 카메라와 Depth(ToF) 센서를 동시에 활용하여  
-**YOLOv11 / RT-DETRv2 / Grounding DINO (RGB)** + **PointPillars (Depth)** 를  
+**YOLOv11 / RT-DETR-r50vd / Grounding DINO (RGB)** + **PointPillars (Depth)** 를  
 실시간으로 구동하고, Weighted Box Fusion으로 두 스트림을 통합하는 모듈형 파이프라인입니다.
 
 ---
@@ -75,7 +75,7 @@ conda activate kinect_det
 | torchaudio | 2.1.2+cu118 | pip (pytorch.org whl) | 오디오 처리 |
 | opencv-python-headless | 4.9.0.80 | pip | 이미지 처리 |
 | ultralytics | 8.3.40 | pip | YOLOv11 |
-| transformers | 4.44.2 | pip | RT-DETRv2 |
+| transformers | 4.47.1 | pip | RT-DETR |
 | spconv-cu118 | 2.3.6 | pip | OpenPCDet 의존성 |
 | open3d | 0.18.0 | pip | 포인트 클라우드 시각화 |
 | supervision | 0.23.0 | pip | ByteTrack 추적 |
@@ -197,7 +197,7 @@ mode: "fusion"   # "rgb" | "depth" | "fusion"
 Azure Kinect (Color 1920×1080)
         │
         ├─→ YOLOv11-x (FP16, imgsz=640)  ─┐
-        └─→ RT-DETRv2-r50vd (FP16)        ─┤ → NMS → ByteTracker → Visualizer
+        └─→ RT-DETR-r50vd (FP16)          ─┤ → NMS → ByteTracker → Visualizer
             [또는 Grounding DINO]           ─┘
 ```
 
@@ -207,7 +207,7 @@ Azure Kinect (Color 1920×1080)
 
 **예상 FPS (RTX 3090):**
 - YOLOv11-x 단독: 35~50 FPS
-- YOLOv11-x + RT-DETRv2 병렬: 20~30 FPS
+- YOLOv11-x + RT-DETR-r50vd 병렬: 20~30 FPS
 
 ---
 
@@ -298,14 +298,13 @@ det.export_tensorrt("weights/yolo/yolo11x.engine", fp16=True)
 
 ---
 
-### RT-DETRv2
+### RT-DETR-r50vd
 
 ```yaml
 rgb_models:
   rtdetrv2:
     enabled: true
-    weights: "weights/rtdetrv2/rtdetrv2_r50vd"  # HF 모델명 or 로컬 경로
-    backbone: "r50vd"    # r50vd | r101vd
+    weights: "PekingU/rtdetr_r50vd"  # HuggingFace 모델 ID (자동 캐시)
     imgsz: 640
     half: true
     conf: 0.3
@@ -314,7 +313,10 @@ rgb_models:
 
 - 첫 실행 시 HuggingFace에서 자동 다운로드 (`~/.cache/huggingface/`)
 - NMS-free Transformer 구조 → 겹친 물체 탐지에 강점
-- `backbone: "r101vd"` 로 변경 시 정확도↑ (속도↓)
+- **모델**: `PekingU/rtdetr_r50vd` (RT-DETR v1, transformers 4.47.1 호환)
+
+> **참고**: RT-DETRv2(`RTDetrV2ForObjectDetection`)는 `transformers>=4.49.0`부터 추가됐으나  
+> `torch 2.1.2`와 호환되지 않아 RT-DETR v1을 사용합니다. mAP 차이는 약 1~2 포인트입니다.
 
 ---
 
@@ -547,7 +549,7 @@ lig/
 │   ├── rgb/
 │   │   ├── __init__.py
 │   │   ├── yolov11.py               # YOLOv11Detector (ultralytics)
-│   │   ├── rtdetrv2.py              # RTDETRv2Detector (HuggingFace Transformers)
+│   │   ├── rtdetrv2.py              # RTDETRDetector (HuggingFace, PekingU/rtdetr_r50vd)
 │   │   └── grounding_dino.py        # GroundingDINODetector (오픈 보캐뷸러리)
 │   └── depth/
 │       ├── __init__.py
@@ -591,7 +593,7 @@ lig/
 │
 ├── weights/                         # 모델 가중치 (git-ignored, .gitkeep만 추적)
 │   ├── yolo/          ← yolo11x.pt
-│   ├── rtdetrv2/      ← (HuggingFace 자동 캐시)
+│   ├── rtdetrv2/      ← (HuggingFace 자동 캐시, PekingU/rtdetr_r50vd)
 │   ├── grounding_dino/ ← groundingdino_swint_ogc.pth
 │   └── pointpillars/  ← pointpillar_7728.pth
 │
@@ -884,7 +886,7 @@ rgb_models:
 | 컴포넌트 | 라이선스 |
 |---|---|
 | YOLOv11 (ultralytics) | AGPL-3.0 |
-| RT-DETRv2 (HuggingFace) | Apache-2.0 |
+| RT-DETR-r50vd (HuggingFace, PekingU/rtdetr_r50vd) | Apache-2.0 |
 | Grounding DINO | Apache-2.0 |
 | OpenPCDet | Apache-2.0 |
 | pyk4a | MIT |
