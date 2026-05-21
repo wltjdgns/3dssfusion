@@ -157,13 +157,22 @@ RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 **반드시 Windows CMD에서 실행합니다 (PowerShell 불가).**
 
 ```cmd
-:: 1. VS 2022 MSVC 환경 활성화 (VS 2026 아님!)
+:: 1. VS 2022 MSVC 환경 활성화
+::    VS 2022 외 다른 버전(2023+)이 함께 설치된 경우 VCToolsVersion으로 14.37 고정 필수
+set VCToolsVersion=14.37.32822
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 
-:: 2. OpenPCDet 클론 (이미 존재하면 생략)
-git clone https://github.com/open-mmlab/OpenPCDet.git third_party/OpenPCDet
+:: 2. OpenPCDet 소스 fetch (레포 클론 시 패치 파일이 이미 존재하므로 git clone 대신 사용)
+git -C third_party\OpenPCDet init
+git -C third_party\OpenPCDet remote add origin https://github.com/open-mmlab/OpenPCDet.git
+git -C third_party\OpenPCDet fetch --depth=1 origin master
+git -C third_party\OpenPCDet checkout FETCH_HEAD -- .
+:: 패치 파일 복원 (fetch로 덮어씌워진 파일을 우리 레포 버전으로 되돌림)
+git checkout -- third_party/OpenPCDet/setup.py
+git checkout -- third_party/OpenPCDet/pcdet/ops/iou3d_nms/src/
+git checkout -- third_party/OpenPCDet/pcdet/ops/ingroup_inds/src/
 
 :: 3. PyTorch 2.1.2 호환 setuptools 설치 (pkg_resources 오류 방지)
 pip install "setuptools==69.5.1"
@@ -176,6 +185,10 @@ cd third_party\OpenPCDet
 python setup.py develop
 cd ..\..
 ```
+
+> **VCToolsVersion 확인:** `dir "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\" /b` 로  
+> 설치된 툴셋 버전을 확인합니다. `14.37.xxxxx` 항목이 없으면 VS Installer → 수정 → 개별 구성 요소 →  
+> `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.37-17.7)` 설치 필요.
 
 > **SharedArray 빌드 실패는 무시합니다.** `sys/mman.h` POSIX 헤더를 사용하는 Linux 전용 패키지로,  
 > PointPillars 추론(inference)에는 사용되지 않습니다.
@@ -898,13 +911,17 @@ pip install "setuptools==69.5.1"
 python setup.py develop
 ```
 
-**`error STL1002: Unexpected compiler version, expected CUDA 13.2 or newer`**
+**`error STL1002: Unexpected compiler version, expected CUDA 12.x or newer`**
 
-→ CUDA 11.8은 VS 2022(MSVC 14.39 이하)까지만 지원합니다. VS 2026 이상에서는 빌드 불가능합니다.  
-VS 2022 Build Tools를 별도 설치 후, VS 2022의 vcvars64.bat으로 환경을 활성화해야 합니다.
+→ CUDA 11.8은 MSVC **14.37(VS 2022 17.7) 이하**까지만 지원합니다.  
+VS 2022라도 최신 업데이트(MSVC 14.38+)가 설치되면 동일 오류 발생합니다.
+
+해결 순서:
+1. VS Installer → 수정 → 개별 구성 요소 → `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.37-17.7)` 설치
+2. 빌드 전 VCToolsVersion으로 14.37 고정 후 vcvars64.bat 호출
 
 ```cmd
-:: VS 2022 Build Tools vcvars64 사용 (VS 2026 아님)
+set VCToolsVersion=14.37.32822
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
