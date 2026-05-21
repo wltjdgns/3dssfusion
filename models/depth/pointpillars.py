@@ -168,16 +168,9 @@ class PointPillarsDetector(BaseDetector):
             "batch_size":       1,
         }
 
-        from contextlib import nullcontext
-
-        stream = self._cuda_stream
-        ctx = torch.cuda.stream(stream) if stream is not None else nullcontext()
         t0 = time.perf_counter()
-        with ctx:
-            with torch.no_grad():
-                pred_dicts, _ = self._model.forward(batch_dict)
-        if stream is not None:
-            stream.synchronize()
+        with torch.no_grad():
+            pred_dicts, _ = self._model.forward(batch_dict)
         ms = (time.perf_counter() - t0) * 1000.0
 
         return DetectionResult(

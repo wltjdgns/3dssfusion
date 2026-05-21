@@ -50,26 +50,18 @@ class YOLOv11Detector(BaseDetector):
         if not self.is_loaded:
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
-        import torch
-        from contextlib import nullcontext
-
-        stream = self._cuda_stream
-        ctx = torch.cuda.stream(stream) if stream is not None else nullcontext()
-        with ctx:
-            results = self._model(
-                frame,
-                imgsz=self.imgsz,
-                conf=conf_threshold,
-                iou=iou_threshold,
-                half=self.half,
-                classes=self.classes,
-                augment=self.augment,
-                stream=self.stream,
-                verbose=False,
-            )
-            result = next(iter(results))
-        if stream is not None:
-            stream.synchronize()
+        results = self._model(
+            frame,
+            imgsz=self.imgsz,
+            conf=conf_threshold,
+            iou=iou_threshold,
+            half=self.half,
+            classes=self.classes,
+            augment=self.augment,
+            stream=self.stream,
+            verbose=False,
+        )
+        result = next(iter(results))
         inference_ms: float = result.speed.get("inference", 0.0)
         detections = self._parse_result(result)
         return DetectionResult(detections=detections, inference_time_ms=inference_ms)
