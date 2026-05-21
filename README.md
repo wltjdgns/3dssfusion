@@ -42,7 +42,7 @@ Azure Kinect DK의 RGB 카메라와 Depth(ToF) 센서를 동시에 활용하여
 | CUDA | 11.8 | nvcc 확인: `nvcc --version` |
 | cuDNN | 8.x | PyTorch 설치 시 자동 |
 | Azure Kinect SDK | **v1.4.1** | 수동 설치 필요 |
-| Visual Studio Build Tools | **2022 필수** | OpenPCDet CUDA 빌드 전용 (VS 2026 불가) |
+| [Visual Studio 2022 Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe) | **2022 필수** | OpenPCDet CUDA 빌드 전용 (VS 2023+ 불가) |
 | Miniconda / Anaconda | 최신 | 환경 관리 |
 
 ---
@@ -145,14 +145,14 @@ RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 
 **전제 조건: Visual Studio 2022 Build Tools 설치 필수**
 
-> CUDA 11.8은 MSVC 14.39 이하(VS 2022)까지만 지원합니다.  
-> VS 2023/2025/2026 등 최신 버전은 CUDA 11.8과 **근본적으로 호환되지 않습니다.**  
-> VS 2026이 이미 설치되어 있어도 VS 2022 Build Tools를 **추가 설치**하면 공존 가능합니다.
+> CUDA 11.8은 MSVC 14.39 이하 (VS 2022)까지만 지원합니다.  
+> VS 2023 이상은 CUDA 11.8과 **근본적으로 호환되지 않습니다** (STL1002 빌드 오류).  
+> VS 2026 등 최신 버전이 이미 설치되어 있어도 VS 2022 Build Tools를 **추가 설치**하면 공존 가능합니다.
 >
-> **VS 2022 Build Tools 설치:**
-> 1. [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/downloads/) → "Tools for Visual Studio" → "Build Tools for Visual Studio 2022" 다운로드
-> 2. 설치 시 **"C++를 사용한 데스크톱 개발"** 워크로드 선택
-> 3. 설치 완료 후 `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\` 폴더 생성 확인
+> **VS 2022 Build Tools 설치 방법:**
+> 1. 직접 다운로드: **[vs_BuildTools.exe (VS 2022)](https://aka.ms/vs/17/release/vs_BuildTools.exe)**
+> 2. 설치 관리자 실행 후 **"C++를 사용한 데스크톱 개발"** 워크로드 선택
+> 3. 설치 완료 확인: `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\` 폴더 존재 여부
 
 **반드시 Windows CMD에서 실행합니다 (PowerShell 불가).**
 
