@@ -470,6 +470,155 @@ postprocess:
 
 ## 성능 튜닝
 
+### VRAM별 권장 설정
+
+| VRAM | 대표 GPU | 권장 모드 | 활성 모델 |
+|---|---|---|---|
+| 4 GB | GTX 1650, RTX 3050 | RGB | YOLOv11-s 단독 |
+| 6 GB | RTX 2060, RTX 3060 | RGB | YOLOv11-x + RT-DETR |
+| 8 GB | RTX 3060 Ti, RTX 3070 | Fusion | YOLOv11-x + RT-DETR + PointPillars |
+| 12 GB | RTX 3080 12G, RTX 4070 | Fusion | YOLOv11-x + RT-DETR + PointPillars (+ GDINO 주의) |
+| 16 GB | RTX 4080, A4000 | Fusion | 전체 모델 |
+| 24 GB | RTX 3090, RTX 4090 | Fusion | 전체 모델 + imgsz 1280 |
+
+#### 4 GB — GTX 1650 / RTX 3050
+
+```yaml
+mode: "rgb"
+rgb_models:
+  active: ["yolov11"]
+  yolov11:
+    model_size: "s"   # s 또는 n
+    imgsz: 512
+    half: true
+    conf: 0.3
+depth_model:
+  pointpillars:
+    enabled: false
+performance:
+  rgb_inference_parallel: false
+  skip_depth_every_n: 99
+```
+
+#### 6 GB — RTX 2060 / RTX 3060
+
+```yaml
+mode: "rgb"
+rgb_models:
+  active: ["yolov11", "rtdetrv2"]
+  yolov11:
+    model_size: "x"
+    imgsz: 640
+    half: true
+  rtdetrv2:
+    half: true
+depth_model:
+  pointpillars:
+    enabled: false
+performance:
+  rgb_inference_parallel: true
+```
+
+#### 8 GB — RTX 3060 Ti / RTX 3070 / RTX 2080
+
+```yaml
+mode: "fusion"
+rgb_models:
+  active: ["yolov11", "rtdetrv2"]   # grounding_dino는 비활성 (3 GB 추가 소요)
+  yolov11:
+    model_size: "x"
+    imgsz: 640
+    half: true
+  rtdetrv2:
+    half: true
+  grounding_dino:
+    enabled: false
+depth_model:
+  pointpillars:
+    enabled: true
+performance:
+  rgb_inference_parallel: true
+  skip_depth_every_n: 2
+```
+
+#### 12 GB — RTX 3080 12G / RTX 4070
+
+```yaml
+mode: "fusion"
+rgb_models:
+  active: ["yolov11", "rtdetrv2"]
+  yolov11:
+    model_size: "x"
+    imgsz: 640
+    half: true
+  rtdetrv2:
+    half: true
+  grounding_dino:
+    enabled: false   # 활성화 시 VRAM 여유 확인 필요
+depth_model:
+  pointpillars:
+    enabled: true
+performance:
+  rgb_inference_parallel: true
+  skip_depth_every_n: 1
+```
+
+#### 16 GB — RTX 4080 / A4000
+
+```yaml
+mode: "fusion"
+rgb_models:
+  active: ["yolov11", "rtdetrv2", "grounding_dino"]
+  yolov11:
+    model_size: "x"
+    imgsz: 640
+    half: true
+  rtdetrv2:
+    half: true
+  grounding_dino:
+    enabled: true
+    half: false   # FP32 고정
+depth_model:
+  pointpillars:
+    enabled: true
+performance:
+  rgb_inference_parallel: true
+  skip_depth_every_n: 1
+```
+
+#### 24 GB — RTX 3090 / RTX 4090
+
+```yaml
+mode: "fusion"
+rgb_models:
+  active: ["yolov11", "rtdetrv2", "grounding_dino"]
+  yolov11:
+    model_size: "x"
+    imgsz: 1280
+    half: true
+    augment: true
+  rtdetrv2:
+    half: true
+  grounding_dino:
+    enabled: true
+    half: false
+depth_model:
+  pointpillars:
+    enabled: true
+fusion:
+  strategy: "weighted_box_fusion"
+  rgb_weight: 0.6
+  depth_weight: 0.4
+performance:
+  rgb_inference_parallel: true
+  skip_depth_every_n: 1
+```
+
+> **Grounding DINO는 FP32 전용**으로 약 3 GB를 추가로 소비합니다.  
+> 8 GB 이하에서는 비활성화를 권장하며, 12 GB 환경에서는 다른 모델 실행 후 여유 VRAM을 확인하고 활성화하세요.
+
+---
+
 ### FPS 우선 (RTX 2060 / GTX 1080 환경)
 
 ```yaml
