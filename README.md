@@ -172,8 +172,8 @@ RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 
 **전제 조건: Visual Studio 2022 Build Tools 설치 필수**
 
-> CUDA 11.8은 MSVC 14.39 이하 (VS 2022)까지만 지원합니다.  
-> VS 2023 이상은 CUDA 11.8과 **근본적으로 호환되지 않습니다** (STL1002 빌드 오류).  
+> CUDA 11.8은 MSVC **14.33(VS 2022 17.3) 이하**까지만 지원합니다.  
+> VS 2022라도 MSVC 14.34 이상으로 업데이트되어 있으면 동일한 STL1002 빌드 오류가 발생합니다.  
 > VS 2026 등 최신 버전이 이미 설치되어 있어도 VS 2022 Build Tools를 **추가 설치**하면 공존 가능합니다.
 >
 > **VS 2022 Build Tools 설치 방법:**
@@ -185,8 +185,8 @@ RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 
 ```cmd
 :: 1. VS 2022 MSVC 환경 활성화
-::    VS 2022 외 다른 버전(2023+)이 함께 설치된 경우 VCToolsVersion으로 14.37 고정 필수
-set VCToolsVersion=14.37.32822
+::    VS 2022 외 다른 버전(2023+)이 함께 설치된 경우 VCToolsVersion으로 14.33 고정 필수
+set VCToolsVersion=14.33.31629
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
@@ -231,8 +231,8 @@ cd ..\..
 > ```
 
 > **VCToolsVersion 확인:** `dir "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\" /b` 로  
-> 설치된 툴셋 버전을 확인합니다. `14.37.xxxxx` 항목이 없으면 VS Installer → 수정 → 개별 구성 요소 →  
-> `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.37-17.7)` 설치 필요.
+> 설치된 툴셋 버전을 확인합니다. `14.33.xxxxx` 항목이 없으면 VS Installer → 수정 → 개별 구성 요소 →  
+> `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.33-17.3)` 설치 필요.
 
 > **SharedArray 빌드 실패는 무시합니다.** `sys/mman.h` POSIX 헤더를 사용하는 Linux 전용 패키지로,  
 > PointPillars 추론(inference)에는 사용되지 않습니다.
@@ -1106,15 +1106,15 @@ python setup.py develop
 
 **`error STL1002: Unexpected compiler version, expected CUDA 12.x or newer`**
 
-→ CUDA 11.8은 MSVC **14.37(VS 2022 17.7) 이하**까지만 지원합니다.  
-VS 2022라도 최신 업데이트(MSVC 14.38+)가 설치되면 동일 오류 발생합니다.
+→ CUDA 11.8은 MSVC **14.33(VS 2022 17.3) 이하**까지만 지원합니다.  
+VS 2022라도 최신 업데이트(MSVC 14.34+)가 설치되면 동일 오류 발생합니다.
 
 해결 순서:
-1. VS Installer → 수정 → 개별 구성 요소 → `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.37-17.7)` 설치
-2. 빌드 전 VCToolsVersion으로 14.37 고정 후 vcvars64.bat 호출
+1. VS Installer → 수정 → 개별 구성 요소 → `MSVC v143 - VS 2022 C++ x64/x86 빌드 도구 (v14.33-17.3)` 설치
+2. 빌드 전 VCToolsVersion으로 14.33 고정 후 vcvars64.bat 호출
 
 ```cmd
-set VCToolsVersion=14.37.32822
+set VCToolsVersion=14.33.31629
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
