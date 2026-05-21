@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import queue
-import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -91,9 +89,6 @@ class KinectCapture:
         self._config_dict = config
         self._device: Optional[PyK4A] = None
         self._frame_id: int = 0
-        self._async_queue: Optional[queue.Queue] = None
-        self._stop_event: Optional[threading.Event] = None
-        self._capture_thread: Optional[threading.Thread] = None
 
     @property
     def device(self) -> Optional[PyK4A]:
@@ -120,48 +115,7 @@ class KinectCapture:
             ) from e
         logger.info("Azure Kinect 장치 연결 성공.")
 
-    def start_async_capture(self) -> None:
-        """백그라운드 캡처 스레드를 시작합니다. 처리 루프와 캡처를 겹쳐 GPU idle 제거."""
-        self._async_queue = queue.Queue(maxsize=2)
-        self._stop_event = threading.Event()
-        self._capture_thread = threading.Thread(
-            target=self._capture_loop, daemon=True, name="kinect-capture"
-        )
-        self._capture_thread.start()
-        logger.info("비동기 캡처 스레드 시작")
-
-    def _capture_loop(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                frame = self.get_frame()
-                # 큐가 가득 찬 경우 오래된 프레임 버리고 최신 프레임 유지
-                if self._async_queue.full():
-                    try:
-                        self._async_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                self._async_queue.put_nowait(frame)
-            except Exception as exc:
-                if not self._stop_event.is_set():
-                    logger.warning(f"캡처 스레드 오류: {exc}")
-
-    def get_latest_frame(self, timeout: float = 2.0) -> CaptureFrame:
-        """비동기 큐에서 가장 최근 프레임을 반환합니다 (캡처 스레드가 실행 중이어야 함)."""
-        if self._async_queue is None:
-            return self.get_frame()
-        return self._async_queue.get(timeout=timeout)
-
-    def stop_async_capture(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        if self._capture_thread is not None:
-            self._capture_thread.join(timeout=3.0)
-        self._async_queue = None
-        self._stop_event = None
-        self._capture_thread = None
-
     def close(self) -> None:
-        self.stop_async_capture()
         if self._device is not None:
             self._device.stop()
             self._device = None

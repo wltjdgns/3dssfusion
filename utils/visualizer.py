@@ -111,6 +111,12 @@ class Visualizer:
         self._font_scale: float = config.get("font_scale", 0.6)
         self._thickness: int = config.get("line_thickness", 2)
 
+    def open(self) -> None:
+        """창을 미리 열어 setup 직후부터 화면에 표시합니다."""
+        if self._enabled:
+            cv2.namedWindow(self._window, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self._window, 1280, 540)
+
     def render(
         self,
         color: np.ndarray,

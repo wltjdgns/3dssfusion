@@ -53,16 +53,13 @@ class DepthPipeline:
         self._last_color_frame = None
         self._last_depth_frame = None
 
-        # 비동기 캡처: 카메라 대기와 추론을 겹쳐 GPU idle 제거
-        self._capture.start_async_capture()
-
         logger.info("DepthPipeline setup 완료")
 
     def run_once(self) -> "DetectionResult":
         """프레임 1장을 캡처하고 3D 탐지 결과(+ 2D 투영)를 반환합니다."""
         from models import Detection, DetectionResult
 
-        frame = self._capture.get_latest_frame()
+        frame = self._capture.get_frame()
         self._last_color_frame = frame.color
         self._last_depth_frame = frame.depth
         point_cloud = self._converter.convert(frame.depth, frame.color)
@@ -94,6 +91,7 @@ class DepthPipeline:
         self.setup()
         vis_cfg = self._cfg.get("postprocess", {}).get("visualizer", {})
         vis = Visualizer(vis_cfg)
+        vis.open()
         try:
             for result in self.run_stream():
                 fps = self._fps_counter.fps if self._fps_counter else 0.0

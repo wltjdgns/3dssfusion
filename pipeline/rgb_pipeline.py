@@ -82,9 +82,6 @@ class RGBPipeline:
         if self._parallel and len(self._detectors) > 1:
             self._executor = ThreadPoolExecutor(max_workers=len(self._detectors))
 
-        # 비동기 캡처: 카메라 대기(~33ms)와 GPU 추론을 겹쳐 GPU idle 제거
-        self._capture.start_async_capture()
-
         logger.info(f"RGBPipeline setup 완료 — 모델 수: {len(self._detectors)}")
 
     def run_once(self) -> "DetectionResult":
@@ -92,7 +89,7 @@ class RGBPipeline:
         from models import Detection, DetectionResult
         from fusion.nms import nms_2d
 
-        frame = self._capture.get_latest_frame()
+        frame = self._capture.get_frame()
         self._last_color_frame = frame.color
         color_img = frame.color
 
@@ -144,6 +141,7 @@ class RGBPipeline:
         self.setup()
         vis_cfg = self._cfg.get("postprocess", {}).get("visualizer", {})
         vis = Visualizer(vis_cfg)
+        vis.open()
         try:
             for result in self.run_stream():
                 fps = self._fps_counter.fps if self._fps_counter else 0.0
