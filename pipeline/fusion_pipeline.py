@@ -123,6 +123,9 @@ class FusionPipeline:
         n_workers = len(self._rgb_detectors) + 1
         self._executor = ThreadPoolExecutor(max_workers=max(n_workers, 3))
 
+        # 비동기 캡처: 카메라 대기(~33ms)와 GPU 추론을 겹쳐 GPU idle 제거
+        self._capture.start_async_capture()
+
         # Warmup
         self._run_warmup()
         logger.info("FusionPipeline setup 완료")
@@ -154,7 +157,7 @@ class FusionPipeline:
         """프레임 1장을 처리하고 Fusion 결과를 반환합니다."""
         from models import DetectionResult
 
-        frame = self._capture.get_frame()
+        frame = self._capture.get_latest_frame()
         self._frame_count += 1
         self._last_color_frame = frame.color
         self._last_depth_frame = frame.depth
