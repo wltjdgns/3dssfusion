@@ -42,7 +42,7 @@ Azure Kinect DK의 RGB 카메라와 Depth(ToF) 센서를 동시에 활용하여
 | CUDA | 11.8 | nvcc 확인: `nvcc --version` |
 | cuDNN | 8.x | PyTorch 설치 시 자동 |
 | Azure Kinect SDK | **v1.4.1** | 수동 설치 필요 |
-| Visual Studio Build Tools | 2019 이상 | Depth 모드(OpenPCDet) 전용 |
+| Visual Studio Build Tools | **2022/2025** | pyk4a 빌드 및 OpenPCDet 전용 |
 | Miniconda / Anaconda | 최신 | 환경 관리 |
 
 ---
@@ -67,36 +67,66 @@ conda activate kinect_det
 
 `environment.yml`에 정의된 주요 패키지:
 
-| 패키지 | 버전 | 역할 |
-|---|---|---|
-| python | 3.10.14 | 런타임 |
-| pytorch | 2.1.2+cu118 | 딥러닝 프레임워크 |
-| pyk4a | 1.4.1 | Azure Kinect Python 래퍼 |
-| ultralytics | 8.3.40 | YOLOv11 |
-| transformers | 4.44.2 | RT-DETRv2 |
-| groundingdino-py | 0.4.0 | Grounding DINO |
-| spconv-cu118 | 2.3.6 | OpenPCDet 의존성 |
-| open3d | 0.18.0 | 포인트 클라우드 시각화 |
-| supervision | 0.23.0 | ByteTrack 추적 |
-| ensemble-boxes | 1.0.9 | Weighted Box Fusion |
-| sahi | 0.11.19 | 소형 물체 분할 추론 |
+| 패키지 | 버전 | 설치 방법 | 역할 |
+|---|---|---|---|
+| python | 3.10.14 | conda | 런타임 |
+| torch | 2.1.2+cu118 | pip (pytorch.org whl) | 딥러닝 프레임워크 |
+| torchvision | 0.16.2+cu118 | pip (pytorch.org whl) | 이미지 변환 |
+| torchaudio | 2.1.2+cu118 | pip (pytorch.org whl) | 오디오 처리 |
+| opencv-python-headless | 4.9.0.80 | pip | 이미지 처리 |
+| ultralytics | 8.3.40 | pip | YOLOv11 |
+| transformers | 4.44.2 | pip | RT-DETRv2 |
+| spconv-cu118 | 2.3.6 | pip | OpenPCDet 의존성 |
+| open3d | 0.18.0 | pip | 포인트 클라우드 시각화 |
+| supervision | 0.23.0 | pip | ByteTrack 추적 |
+| ensemble-boxes | 1.0.9 | pip | Weighted Box Fusion |
+| onnxruntime-gpu | 1.18.1 | pip | ONNX 추론 |
 
-### 3단계. pyk4a 환경 변수 (빌드 실패 시)
+> **참고**: PyTorch는 conda 채널 대신 pytorch.org 공식 pip wheel을 사용합니다.  
+> 이는 Windows에서 conda 빌드의 `libiomp5md.dll` 버전 불일치로 인한 import 오류를 방지하기 위함입니다.
+
+### 3단계. 추가 패키지 설치 (Post-install)
+
+아래 3개 패키지는 의존성 충돌로 인해 `conda env create` 후 별도로 설치해야 합니다.
+
+#### sahi (소형 물체 분할 추론)
 
 ```powershell
-# PowerShell에서 실행
-$env:K4A_DIR = "C:\Program Files\Azure Kinect SDK v1.4.1"
-pip install pyk4a==1.4.1
+# sahi는 opencv-python(non-headless)을 요구하나, 런타임에는 headless로 동작 가능
+pip install sahi==0.11.19 --no-deps
 ```
+
+#### groundingdino-py (Grounding DINO)
+
+```powershell
+# supervision==0.6.0 충돌 우회 + Windows cp949 인코딩 오류 방지
+$env:PYTHONUTF8 = "1"
+pip install groundingdino-py==0.4.0 --no-deps
+```
+
+#### pyk4a (Azure Kinect Python 래퍼)
+
+pyk4a는 C 확장을 컴파일해야 하므로 **VS Build Tools + Azure Kinect SDK** 설치 후 진행합니다.
+
+```cmd
+:: x64 Native Tools Command Prompt 또는 vcvars64.bat 환경에서 실행
+call "C:\Program Files (x86)\Microsoft Visual Studio\<버전>\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set DISTUTILS_USE_SDK=1
+set MSSdk=1
+pip install git+https://github.com/etiennedub/pyk4a.git@1.5.0
+```
+
+> `<버전>` 자리에는 설치된 VS Build Tools 폴더명(예: `18`)을 입력합니다.  
+> 시스템에 Azure Kinect SDK v1.4.1이 설치되어 있어야 빌드 시 자동 감지됩니다.
 
 ### 4단계. 설치 검증
 
 ```bash
-python scripts/verify_install.py
+python verify_env.py
 ```
 
-10개 항목을 순서대로 검사하고 `PASS / FAIL / SKIP` 테이블을 출력합니다.  
-모든 항목이 PASS 또는 SKIP이면 정상 실행 가능합니다.
+모든 핵심 패키지(torch, torchvision, cv2, ultralytics, supervision, transformers, open3d, spconv, onnxruntime, sahi, groundingdino, pyk4a)를 임포트하고 결과를 출력합니다.  
+CUDA available: True가 표시되면 GPU 추론 준비 완료입니다.
 
 ### 5단계. 가중치 다운로드
 
@@ -778,14 +808,23 @@ ConnectionError: Azure Kinect 장치를 열 수 없습니다
 
 ### pyk4a 빌드 실패
 
-```bash
-# PowerShell에서 실행
-$env:K4A_DIR = "C:\Program Files\Azure Kinect SDK v1.4.1"
-pip uninstall pyk4a -y
-pip install pyk4a==1.4.1
+```
+error: Unable to find a compatible Visual Studio installation.
 ```
 
-Visual Studio 2019 이상의 Build Tools (C++ 워크로드 포함) 가 설치되어 있어야 합니다.
+**원인**: pyk4a는 C 확장 빌드 시 MSVC 컴파일러를 필요로 합니다.  
+**해결**: VS Build Tools 환경을 먼저 설정한 후 설치합니다.
+
+```cmd
+:: VS Build Tools의 vcvars64.bat 경로 확인 후 실행
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set DISTUTILS_USE_SDK=1
+set MSSdk=1
+pip install git+https://github.com/etiennedub/pyk4a.git@1.5.0
+```
+
+> PyPI에는 `pyk4a==1.4.1`이 존재하지 않습니다. GitHub 소스(v1.5.0)에서 직접 빌드합니다.  
+> Azure Kinect SDK v1.4.1이 `C:\Program Files\Azure Kinect SDK v1.4.1\`에 설치되어 있어야 합니다.
 
 ---
 
