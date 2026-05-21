@@ -42,7 +42,7 @@ Azure Kinect DK의 RGB 카메라와 Depth(ToF) 센서를 동시에 활용하여
 | CUDA | 11.8 | nvcc 확인: `nvcc --version` |
 | cuDNN | 8.x | PyTorch 설치 시 자동 |
 | Azure Kinect SDK | **v1.4.1** | 수동 설치 필요 |
-| Visual Studio Build Tools | **2022/2025** | pyk4a 빌드 및 OpenPCDet 전용 |
+| Visual Studio Build Tools | **2022 필수** | OpenPCDet CUDA 빌드 전용 (VS 2026 불가) |
 | Miniconda / Anaconda | 최신 | 환경 관리 |
 
 ---
@@ -143,11 +143,22 @@ python scripts/download_weights.py --model grounding_dino
 Depth / Fusion 모드에서 PointPillars를 사용하려면 OpenPCDet 빌드가 필요합니다.  
 RGB 단독 모드만 사용한다면 이 단계는 건너뛸 수 있습니다.
 
+**전제 조건: Visual Studio 2022 Build Tools 설치 필수**
+
+> CUDA 11.8은 MSVC 14.39 이하(VS 2022)까지만 지원합니다.  
+> VS 2023/2025/2026 등 최신 버전은 CUDA 11.8과 **근본적으로 호환되지 않습니다.**  
+> VS 2026이 이미 설치되어 있어도 VS 2022 Build Tools를 **추가 설치**하면 공존 가능합니다.
+>
+> **VS 2022 Build Tools 설치:**
+> 1. [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/downloads/) → "Tools for Visual Studio" → "Build Tools for Visual Studio 2022" 다운로드
+> 2. 설치 시 **"C++를 사용한 데스크톱 개발"** 워크로드 선택
+> 3. 설치 완료 후 `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\` 폴더 생성 확인
+
 **반드시 Windows CMD에서 실행합니다 (PowerShell 불가).**
 
 ```cmd
-:: 1. MSVC 환경 활성화 (폴더명은 설치된 VS 버전에 따라 다름: 18, 2022 등)
-call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+:: 1. VS 2022 MSVC 환경 활성화 (VS 2026 아님!)
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 
@@ -168,9 +179,6 @@ cd ..\..
 
 > **SharedArray 빌드 실패는 무시합니다.** `sys/mman.h` POSIX 헤더를 사용하는 Linux 전용 패키지로,  
 > PointPillars 추론(inference)에는 사용되지 않습니다.
-
-> **VS 폴더명 확인:** `dir "C:\Program Files (x86)\Microsoft Visual Studio\" /b` 로 폴더명 확인 후  
-> vcvars64.bat 경로의 `18` 부분을 실제 폴더명(예: `2022`)으로 변경합니다.
 
 ---
 
@@ -888,6 +896,16 @@ python setup.py develop
 ```cmd
 pip install "setuptools==69.5.1"
 python setup.py develop
+```
+
+**`error STL1002: Unexpected compiler version, expected CUDA 13.2 or newer`**
+
+→ CUDA 11.8은 VS 2022(MSVC 14.39 이하)까지만 지원합니다. VS 2026 이상에서는 빌드 불가능합니다.  
+VS 2022 Build Tools를 별도 설치 후, VS 2022의 vcvars64.bat으로 환경을 활성화해야 합니다.
+
+```cmd
+:: VS 2022 Build Tools vcvars64 사용 (VS 2026 아님)
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
 **`SharedArray 빌드 실패`**
