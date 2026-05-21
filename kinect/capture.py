@@ -25,6 +25,7 @@ class CaptureFrame:
     ir: np.ndarray           # (H, W) uint16
     timestamp_usec: int
     device_temp: float
+    frame_id: int = 0
 
 
 _COLOR_RESOLUTION_MAP: dict[str, ColorResolution] = {
@@ -87,6 +88,12 @@ class KinectCapture:
     def __init__(self, config: dict) -> None:
         self._config_dict = config
         self._device: Optional[PyK4A] = None
+        self._frame_id: int = 0
+
+    @property
+    def device(self) -> Optional[PyK4A]:
+        """열려 있는 PyK4A 장치 객체를 반환합니다 (캘리브레이션 초기화에 사용)."""
+        return self._device
 
     def open(self) -> None:
         k4a_config = _build_config(self._config_dict)
@@ -120,6 +127,7 @@ class KinectCapture:
             raise RuntimeError("장치가 열려 있지 않습니다. open()을 먼저 호출하세요.")
 
         capture = self._device.get_capture()
+        self._frame_id += 1
 
         # BGRA (H,W,4) → BGR (H,W,3): alpha 채널 제거
         bgr = capture.color[..., :3]
@@ -137,6 +145,7 @@ class KinectCapture:
             ir=capture.ir,
             timestamp_usec=int(capture.device_timestamp_usec),
             device_temp=device_temp,
+            frame_id=self._frame_id,
         )
 
     def __enter__(self) -> "KinectCapture":

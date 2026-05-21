@@ -65,6 +65,8 @@ class FusionPipeline:
         self._warmup_frames: int = self._pipeline_cfg.get("warmup_frames", 5)
 
         self._frame_queue: queue.Queue = queue.Queue(maxsize=self._frame_queue_size)
+        # ThreadPoolExecutor를 매 프레임마다 재생성하지 않도록 setup()에서 한 번만 생성
+        self._executor: Optional[ThreadPoolExecutor] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -80,12 +82,14 @@ class FusionPipeline:
 
         logger.info("FusionPipeline setup 시작")
 
-        # Kinect 초기화
+        # Kinect 초기화 — calibration은 device가 열린 뒤에 생성해야 함
         kinect_cfg = self._cfg.get("kinect", {})
         self._capture = KinectCapture(kinect_cfg)
         self._capture.open()
-        self._calibration = KinectCalibration(kinect_cfg)
-        self._converter = PointCloudConverter(self._calibration)
+        self._calibration = KinectCalibration(self._capture.device)
+        self._converter = PointCloudConverter(
+            self._calibration, self._cfg.get("pointcloud", {})
+        )
 
         # RGB 모델 로드
         active_models: List[str] = self._rgb_cfg.get("active_models", [])
@@ -113,9 +117,23 @@ class FusionPipeline:
 
         self._fps_counter = FPSCounter()
 
+        # ThreadPoolExecutor를 한 번만 생성하여 매 프레임 재생성 오버헤드 제거
+        n_workers = len(self._rgb_detectors) + 1  # RGB 모델 수 + Depth 1
+        self._executor = ThreadPoolExecutor(max_workers=max(n_workers, 2))
+
         # Warmup
         self._run_warmup()
         logger.info("FusionPipeline setup 완료")
+
+    def run(self) -> None:
+        """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        self.setup()
+        for _ in self.run_stream():
+            pass
+
+    def cleanup(self) -> None:
+        """shutdown()의 별칭."""
+        self.shutdown()
 
     def run_once(self) -> "DetectionResult":
         """프레임 1장을 처리하고 Fusion 결과를 반환합니다."""
@@ -132,45 +150,44 @@ class FusionPipeline:
         depth_result: Optional["DetectionResult"] = None
         points_3d: Optional[np.ndarray] = None
 
-        # ThreadPoolExecutor로 RGB / Depth 병렬 추론
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            # RGB 모델들 각각 submit
-            rgb_futures: List[Future] = [
-                executor.submit(det.detect, frame.color)
-                for det in self._rgb_detectors
-            ]
+        # 영속 ThreadPoolExecutor로 RGB / Depth 병렬 추론
+        executor = self._executor
+        rgb_futures: List[Future] = [
+            executor.submit(det.detect, frame.color)
+            for det in self._rgb_detectors
+        ]
 
-            # Depth 추론 (스킵 안 할 때만)
-            depth_future: Optional[Future] = None
-            if run_depth and self._depth_detector is not None:
-                pc = self._converter.convert(frame.depth, frame.color)
-                depth_future = executor.submit(self._depth_detector.detect, pc)
-                points_3d = pc  # FrustumProjector용
+        # Depth 추론 (스킵 안 할 때만)
+        depth_future: Optional[Future] = None
+        if run_depth and self._depth_detector is not None:
+            pc = self._converter.convert(frame.depth, frame.color)
+            depth_future = executor.submit(self._depth_detector.detect, pc)
+            points_3d = pc  # FrustumProjector용
 
-            # RGB 결과 수집
-            for future in rgb_futures:
-                try:
-                    rgb_results.append(future.result())
-                except Exception as exc:
-                    logger.warning(f"RGB 추론 실패: {exc}")
+        # RGB 결과 수집
+        for future in rgb_futures:
+            try:
+                rgb_results.append(future.result())
+            except Exception as exc:
+                logger.warning(f"RGB 추론 실패: {exc}")
 
-            # Depth 결과 수집
-            if depth_future is not None:
-                try:
-                    depth_result = depth_future.result()
-                    with self._depth_cache_lock:
-                        self._last_depth_result = depth_result
-                        self._last_points_3d = points_3d
-                except Exception as exc:
-                    logger.warning(f"Depth 추론 실패: {exc}")
-                    with self._depth_cache_lock:
-                        depth_result = self._last_depth_result
-                        points_3d = self._last_points_3d
-            else:
-                # 이전 depth 결과 재사용 (thread-safe read)
+        # Depth 결과 수집
+        if depth_future is not None:
+            try:
+                depth_result = depth_future.result()
+                with self._depth_cache_lock:
+                    self._last_depth_result = depth_result
+                    self._last_points_3d = points_3d
+            except Exception as exc:
+                logger.warning(f"Depth 추론 실패: {exc}")
                 with self._depth_cache_lock:
                     depth_result = self._last_depth_result
                     points_3d = self._last_points_3d
+        else:
+            # 이전 depth 결과 재사용 (thread-safe read)
+            with self._depth_cache_lock:
+                depth_result = self._last_depth_result
+                points_3d = self._last_points_3d
 
         # Fusion
         fused = self._fusion_detector.fuse(
@@ -203,6 +220,9 @@ class FusionPipeline:
     def shutdown(self) -> None:
         """모든 리소스 해제."""
         logger.info("FusionPipeline shutdown")
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+            self._executor = None
         if self._capture is not None:
             self._capture.close()
         for det in self._rgb_detectors:

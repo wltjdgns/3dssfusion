@@ -39,6 +39,14 @@ class GroundingDINODetector(BaseDetector):
         logger.info(f"[GroundingDINO] loading config={self.config_file}, weights={self.weights}")
         self._model = _gd_load_model(self.config_file, self.weights).to(self.device)
         self._model.eval()
+
+        # 매 프레임마다 T.Compose를 재생성하지 않도록 한 번만 빌드
+        import torchvision.transforms as T
+        self._transform = T.Compose([
+            T.Resize((800, 1333)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
         logger.info("[GroundingDINO] model loaded")
 
     # ------------------------------------------------------------------
@@ -55,19 +63,13 @@ class GroundingDINODetector(BaseDetector):
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
         import torch
-        import torchvision.transforms as T
 
         prompt = text_prompt if text_prompt is not None else self.text_prompt
         H, W = frame.shape[:2]
 
-        # BGR → RGB PIL → tensor 전처리
+        # BGR → RGB PIL → tensor 전처리 (transform은 load_model()에서 캐싱됨)
         pil_image = Image.fromarray(frame[:, :, ::-1])
-        transform = T.Compose([
-            T.Resize((800, 1333)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-        image_tensor = transform(pil_image).to(self.device)
+        image_tensor = self._transform(pil_image).to(self.device)
 
         t0 = time.perf_counter()
         with torch.no_grad():

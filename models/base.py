@@ -45,6 +45,18 @@ class BaseDetector(ABC):
         iou_threshold: float = 0.45,
     ) -> DetectionResult: ...
 
+    def load(self) -> None:
+        """load_model()의 별칭 — 파이프라인에서 공통 호출 인터페이스로 사용합니다."""
+        self.load_model()
+
+    def unload(self) -> None:
+        """모델을 메모리에서 해제합니다."""
+        if self._model is not None:
+            import torch
+            del self._model
+            self._model = None
+            torch.cuda.empty_cache()
+
     def warmup(self, n_iter: int = 3) -> None:
         imgsz = self.config.get("imgsz", 640)
         dummy = np.zeros((imgsz, imgsz, 3), dtype=np.uint8)

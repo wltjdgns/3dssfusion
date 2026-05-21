@@ -40,8 +40,10 @@ class DepthPipeline:
         self._capture = KinectCapture(kinect_cfg)
         self._capture.open()
 
-        self._calibration = KinectCalibration(kinect_cfg)
-        self._converter = PointCloudConverter(self._calibration)
+        self._calibration = KinectCalibration(self._capture.device)
+        self._converter = PointCloudConverter(
+            self._calibration, self._cfg.get("pointcloud", {})
+        )
 
         model_cfg = self._depth_cfg.get("pointpillars", {})
         self._detector = PointPillarsDetector(model_cfg)
@@ -77,6 +79,16 @@ class DepthPipeline:
             frame_id=frame.frame_id,
             timestamp_usec=frame.timestamp_usec,
         )
+
+    def run(self) -> None:
+        """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        self.setup()
+        for _ in self.run_stream():
+            pass
+
+    def cleanup(self) -> None:
+        """shutdown()의 별칭."""
+        self.shutdown()
 
     def run_stream(self) -> Generator["DetectionResult", None, None]:
         """연속 프레임을 탐지하는 제너레이터."""

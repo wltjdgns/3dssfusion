@@ -8,7 +8,7 @@ RGBPipeline: RGB 카메라 단독 탐지 모드
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING, Generator, List
+from typing import TYPE_CHECKING, Generator, List, Optional
 
 import numpy as np
 from loguru import logger
@@ -51,6 +51,8 @@ class RGBPipeline:
         self._fps_counter = None
         self._parallel: bool = self._rgb_cfg.get("inference_parallel", False)
         self._nms_iou: float = self._fusion_cfg.get("iou_threshold", 0.5)
+        # ThreadPoolExecutor를 매 프레임마다 재생성하지 않도록 setup()에서 한 번만 생성
+        self._executor: Optional[ThreadPoolExecutor] = None
 
     def setup(self) -> None:
         """모델 로드 및 카메라 오픈."""
@@ -75,6 +77,11 @@ class RGBPipeline:
             logger.info(f"모델 로드 완료: {model_name}")
 
         self._fps_counter = FPSCounter()
+
+        # ThreadPoolExecutor를 한 번만 생성하여 매 프레임 재생성 오버헤드 제거
+        if self._parallel and len(self._detectors) > 1:
+            self._executor = ThreadPoolExecutor(max_workers=len(self._detectors))
+
         logger.info(f"RGBPipeline setup 완료 — 모델 수: {len(self._detectors)}")
 
     def run_once(self) -> "DetectionResult":
@@ -87,17 +94,16 @@ class RGBPipeline:
 
         results: List["DetectionResult"] = []
 
-        if self._parallel and len(self._detectors) > 1:
-            with ThreadPoolExecutor(max_workers=len(self._detectors)) as executor:
-                futures = {
-                    executor.submit(det.detect, color_img): det
-                    for det in self._detectors
-                }
-                for future in as_completed(futures):
-                    try:
-                        results.append(future.result())
-                    except Exception as exc:
-                        logger.warning(f"병렬 추론 실패: {exc}")
+        if self._parallel and self._executor is not None:
+            futures = {
+                self._executor.submit(det.detect, color_img): det
+                for det in self._detectors
+            }
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    logger.warning(f"병렬 추론 실패: {exc}")
         else:
             for det in self._detectors:
                 try:
@@ -128,6 +134,16 @@ class RGBPipeline:
             timestamp_usec=frame.timestamp_usec,
         )
 
+    def run(self) -> None:
+        """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        self.setup()
+        for _ in self.run_stream():
+            pass
+
+    def cleanup(self) -> None:
+        """shutdown()의 별칭."""
+        self.shutdown()
+
     def run_stream(self) -> Generator["DetectionResult", None, None]:
         """연속 프레임을 탐지하는 제너레이터."""
         while True:
@@ -136,6 +152,9 @@ class RGBPipeline:
     def shutdown(self) -> None:
         """카메라 및 모델 리소스 해제."""
         logger.info("RGBPipeline shutdown")
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+            self._executor = None
         if self._capture is not None:
             self._capture.close()
         for det in self._detectors:

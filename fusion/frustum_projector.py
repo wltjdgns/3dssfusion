@@ -62,10 +62,10 @@ class FrustumProjector:
 
         # 3. 핀홀 투영
         intrinsics = self._calib.depth_intrinsics
-        fx = intrinsics["fx"]
-        fy = intrinsics["fy"]
-        cx = intrinsics["cx"]
-        cy = intrinsics["cy"]
+        fx = intrinsics.fx
+        fy = intrinsics.fy
+        cx = intrinsics.cx
+        cy = intrinsics.cy
 
         u = fx * (X_cam / Z_cam) + cx   # (M,)
         v = fy * (Y_cam / Z_cam) + cy   # (M,)

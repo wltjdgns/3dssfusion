@@ -88,6 +88,14 @@ class PointCloudConverter:
         logger.debug(f"Point Cloud 생성 완료: {points.shape[0]}개 포인트")
         return points
 
+    def convert(
+        self,
+        depth: np.ndarray,
+        color: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """depth_to_pointcloud()의 별칭 — 파이프라인에서 공통 호출 인터페이스로 사용합니다."""
+        return self.depth_to_pointcloud(depth, color)
+
     def to_openpcdet_input(self, points: np.ndarray) -> dict:
         """(N,4) Point Cloud → OpenPCDet DataDict 형식."""
         return {
