@@ -119,8 +119,9 @@ class FusionPipeline:
         self._fps_counter = FPSCounter()
 
         # ThreadPoolExecutor를 한 번만 생성하여 매 프레임 재생성 오버헤드 제거
-        n_workers = len(self._rgb_detectors) + 1  # RGB 모델 수 + Depth 1
-        self._executor = ThreadPoolExecutor(max_workers=max(n_workers, 2))
+        # RGB 모델 수 + Depth 1 (PC변환+추론 단일 task로 실행)
+        n_workers = len(self._rgb_detectors) + 1
+        self._executor = ThreadPoolExecutor(max_workers=max(n_workers, 3))
 
         # Warmup
         self._run_warmup()
@@ -166,19 +167,29 @@ class FusionPipeline:
         depth_result: Optional["DetectionResult"] = None
         points_3d: Optional[np.ndarray] = None
 
-        # 영속 ThreadPoolExecutor로 RGB / Depth 병렬 추론
+        # 영속 ThreadPoolExecutor로 RGB / Depth / PC변환 병렬 실행
         executor = self._executor
         rgb_futures: List[Future] = [
             executor.submit(det.detect, frame.color)
             for det in self._rgb_detectors
         ]
 
-        # Depth 추론 (스킵 안 할 때만)
+        # Depth 추론 (스킵 안 할 때만): PC변환도 thread pool에서 실행해 main thread 블록 해제
         depth_future: Optional[Future] = None
+        _pc_ref: list = []  # 클로저로 points_3d 전달
+
         if run_depth and self._depth_detector is not None:
-            pc = self._converter.convert(frame.depth, frame.color)
-            depth_future = executor.submit(self._depth_detector.detect, pc)
-            points_3d = pc  # FrustumProjector용
+            depth_frame = frame.depth
+            color_frame = frame.color
+            converter = self._converter
+            detector = self._depth_detector
+
+            def _depth_task():
+                pc = converter.convert(depth_frame, color_frame)
+                _pc_ref.append(pc)
+                return detector.detect(pc)
+
+            depth_future = executor.submit(_depth_task)
 
         # RGB 결과 수집
         for future in rgb_futures:
@@ -191,6 +202,7 @@ class FusionPipeline:
         if depth_future is not None:
             try:
                 depth_result = depth_future.result()
+                points_3d = _pc_ref[0] if _pc_ref else None
                 with self._depth_cache_lock:
                     self._last_depth_result = depth_result
                     self._last_points_3d = points_3d

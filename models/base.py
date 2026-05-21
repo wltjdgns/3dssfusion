@@ -33,6 +33,7 @@ class BaseDetector(ABC):
         self.config = config
         self.device = device
         self._model = None
+        self._cuda_stream = None
 
     @abstractmethod
     def load_model(self) -> None: ...
@@ -48,6 +49,12 @@ class BaseDetector(ABC):
     def load(self) -> None:
         """load_model()의 별칭 — 파이프라인에서 공통 호출 인터페이스로 사용합니다."""
         self.load_model()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                self._cuda_stream = torch.cuda.Stream()
+        except Exception:
+            self._cuda_stream = None
 
     def unload(self) -> None:
         """모델을 메모리에서 해제합니다."""

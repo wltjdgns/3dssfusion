@@ -94,6 +94,11 @@ class KinectCalibration:
             translation=t.flatten() * 1000.0,
         )
 
+        # 언디스토트 맵을 미리 계산해 두면 매 프레임 5회 반복 연산을 건너뛸 수 있음
+        self._undistort_x_map: Optional[np.ndarray] = None  # (H, W) float32
+        self._undistort_y_map: Optional[np.ndarray] = None
+        self._precompute_undistort_map(depth_w, depth_h)
+
         logger.debug("KinectCalibration 초기화 완료.")
 
     # ------------------------------------------------------------------
@@ -115,6 +120,23 @@ class KinectCalibration:
     # ------------------------------------------------------------------
     # 좌표 변환 (벡터화)
     # ------------------------------------------------------------------
+
+    def _precompute_undistort_map(self, width: int, height: int) -> None:
+        """시작 시 1회만 실행 — 매 프레임 언디스토트 연산 대신 룩업 테이블로 처리."""
+        intr = self._depth_intrinsics
+        u = np.arange(width, dtype=np.float32)
+        v = np.arange(height, dtype=np.float32)
+        uu, vv = np.meshgrid(u, v)                       # (H, W)
+        x_d = (uu - intr.cx) / intr.fx
+        y_d = (vv - intr.cy) / intr.fy
+        x_u, y_u = self._undistort_points(
+            x_d.ravel().astype(np.float64),
+            y_d.ravel().astype(np.float64),
+            intr.dist_coeffs,
+        )
+        self._undistort_x_map = x_u.reshape(height, width).astype(np.float32)
+        self._undistort_y_map = y_u.reshape(height, width).astype(np.float32)
+        logger.debug(f"언디스토트 맵 사전 계산 완료: {width}×{height}")
 
     @staticmethod
     def _undistort_points(
@@ -161,19 +183,26 @@ class KinectCalibration:
         Returns:
             xyz: (N, 3) XYZ in meters, Kinect depth cam 좌표계
         """
-        intr = self.depth_intrinsics
-        Z = depth_values.astype(np.float64) / 1000.0  # mm → m
+        Z = depth_values.astype(np.float32) / 1000.0  # mm → m
 
-        # 왜곡된 정규화 좌표
-        x_d = (depth_pixel[:, 0].astype(np.float64) - intr.cx) / intr.fx
-        y_d = (depth_pixel[:, 1].astype(np.float64) - intr.cy) / intr.fy
+        u = depth_pixel[:, 0]
+        v = depth_pixel[:, 1]
 
-        # 왜곡 보정 (Rational+Brown-Conrady 역산, 5회 반복)
-        x, y = self._undistort_points(x_d, y_d, intr.dist_coeffs)
+        if self._undistort_x_map is not None:
+            # 사전 계산된 룩업 테이블로 언디스토트 좌표 즉시 조회 (반복 연산 없음)
+            x = self._undistort_x_map[v, u].astype(np.float32)
+            y = self._undistort_y_map[v, u].astype(np.float32)
+        else:
+            intr = self.depth_intrinsics
+            x_d = (u.astype(np.float64) - intr.cx) / intr.fx
+            y_d = (v.astype(np.float64) - intr.cy) / intr.fy
+            x, y = self._undistort_points(x_d, y_d, intr.dist_coeffs)
+            x = x.astype(np.float32)
+            y = y.astype(np.float32)
 
         X = x * Z
         Y = y * Z
-        return np.stack([X, Y, Z], axis=1).astype(np.float64)
+        return np.stack([X, Y, Z], axis=1).astype(np.float32)
 
     def depth_pixel_to_color_pixel(
         self, depth_pixel: np.ndarray, depth_values: np.ndarray

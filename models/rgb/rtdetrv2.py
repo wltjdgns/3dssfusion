@@ -68,9 +68,16 @@ class RTDETRv2Detector(BaseDetector):
             inputs = {k: v.half() if v.dtype == torch.float32 else v
                       for k, v in inputs.items()}
 
+        from contextlib import nullcontext
+
+        stream = self._cuda_stream
+        ctx = torch.cuda.stream(stream) if stream is not None else nullcontext()
         t0 = time.perf_counter()
-        with torch.no_grad():
-            outputs = self._model(**inputs)
+        with ctx:
+            with torch.no_grad():
+                outputs = self._model(**inputs)
+        if stream is not None:
+            stream.synchronize()
         inference_ms = (time.perf_counter() - t0) * 1000.0
 
         target_sizes = torch.tensor([[pil_image.height, pil_image.width]]).to(self.device)

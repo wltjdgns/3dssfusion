@@ -58,16 +58,22 @@ def _voxelize(
 
     nv = len(ukeys)
     C  = pts.shape[1]
-    voxels     = np.zeros((nv, max_points_per_voxel, C), np.float32)
-    vox_coords = np.zeros((nv, 4), np.int32)   # [batch_idx, z, y, x]
-    num_pts    = np.zeros(nv, np.int32)
+    M  = max_points_per_voxel
 
-    for i, (start, cnt) in enumerate(zip(idx, counts)):
-        n = min(cnt, max_points_per_voxel)
-        voxels[i, :n] = pts[start:start + n]
-        c = coords[start]
-        vox_coords[i] = [0, c[2], c[1], c[0]]   # batch_idx=0, z, y, x
-        num_pts[i]    = n
+    num_pts = np.minimum(counts, M).astype(np.int32)
+
+    c = coords[idx]                              # (nv, 3)
+    vox_coords = np.empty((nv, 4), np.int32)
+    vox_coords[:, 0] = 0
+    vox_coords[:, 1] = c[:, 2]
+    vox_coords[:, 2] = c[:, 1]
+    vox_coords[:, 3] = c[:, 0]
+
+    j       = np.arange(M, dtype=np.int64)
+    raw_idx = idx[:, None].astype(np.int64) + j[None, :]  # (nv, M)
+    raw_idx = np.clip(raw_idx, 0, len(pts) - 1)
+    voxels  = pts[raw_idx].astype(np.float32)              # (nv, M, C)
+    voxels[j[None, :] >= num_pts[:, None]] = 0.0
 
     return voxels, vox_coords, num_pts
 
@@ -162,9 +168,16 @@ class PointPillarsDetector(BaseDetector):
             "batch_size":       1,
         }
 
+        from contextlib import nullcontext
+
+        stream = self._cuda_stream
+        ctx = torch.cuda.stream(stream) if stream is not None else nullcontext()
         t0 = time.perf_counter()
-        with torch.no_grad():
-            pred_dicts, _ = self._model.forward(batch_dict)
+        with ctx:
+            with torch.no_grad():
+                pred_dicts, _ = self._model.forward(batch_dict)
+        if stream is not None:
+            stream.synchronize()
         ms = (time.perf_counter() - t0) * 1000.0
 
         return DetectionResult(
