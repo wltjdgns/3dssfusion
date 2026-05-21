@@ -49,6 +49,24 @@ Azure Kinect DK의 RGB 카메라와 Depth(ToF) 센서를 동시에 활용하여
 
 ## 설치 가이드
 
+### 0단계. Miniconda 설치
+
+[공식 다운로드 페이지](https://docs.conda.io/en/latest/miniconda.html)에서 **Windows 64-bit 최신 버전**을 다운로드하여 설치합니다.
+
+설치 후 터미널(CMD 또는 bash)에서 다음을 확인합니다:
+
+```bash
+conda --version
+```
+
+> 설치 경로 기본값: `C:\Users\<사용자명>\miniconda3`  
+> PATH 미등록 시 설치 관리자에서 **"Add Miniconda3 to my PATH"** 옵션을 체크하거나, 이후 `conda init` 명령으로 초기화합니다.
+>
+> ```bash
+> conda init bash   # Git Bash 사용 시
+> conda init cmd.exe
+> ```
+
 ### 1단계. Azure Kinect SDK 설치
 
 [공식 다운로드 페이지](https://learn.microsoft.com/ko-kr/azure/kinect-dk/sensor-sdk-download)에서 **Azure Kinect SDK 1.4.1** Windows 패키지를 다운로드합니다.
@@ -59,6 +77,16 @@ C:\Program Files\Azure Kinect SDK v1.4.1\sdk\windows-desktop\amd64\release\bin
 ```
 
 ### 2단계. Conda 환경 구성
+
+최신 Miniconda(conda 26+)는 첫 실행 시 채널 Terms of Service 동의가 필요합니다. `conda env create` 전에 먼저 실행합니다:
+
+```bash
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
+```
+
+그 후 환경을 생성합니다:
 
 ```bash
 conda env create -f environment.yml
@@ -110,13 +138,12 @@ pyk4a는 C 확장을 컴파일해야 하므로 **VS Build Tools + Azure Kinect S
 
 ```cmd
 :: x64 Native Tools Command Prompt 또는 vcvars64.bat 환경에서 실행
-call "C:\Program Files (x86)\Microsoft Visual Studio\<버전>\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 pip install git+https://github.com/etiennedub/pyk4a.git@1.5.0
 ```
 
-> `<버전>` 자리에는 설치된 VS Build Tools 폴더명(예: `18`)을 입력합니다.  
 > 시스템에 Azure Kinect SDK v1.4.1이 설치되어 있어야 빌드 시 자동 감지됩니다.
 
 ### 4단계. 설치 검증
@@ -185,6 +212,23 @@ cd third_party\OpenPCDet
 python setup.py develop
 cd ..\..
 ```
+
+> **빌드 완료 후 반드시 실행:** setup.py develop 과정에서 `pcdet/version.py`에 따옴표가 제대로 닫히지 않는 버그가 있습니다.  
+> 아래 명령으로 수정합니다:
+>
+> ```bash
+> # Git Bash 또는 PowerShell
+> python -c "
+> p = 'third_party/OpenPCDet/pcdet/version.py'
+> open(p, 'w').write('__version__ = \"0.6.0+HEAD\"\n')
+> "
+> ```
+>
+> 또는 `third_party/OpenPCDet/pcdet/version.py` 파일을 직접 열어 아래와 같이 수정합니다:
+>
+> ```python
+> __version__ = "0.6.0+HEAD"
+> ```
 
 > **VCToolsVersion 확인:** `dir "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\" /b` 로  
 > 설치된 툴셋 버전을 확인합니다. `14.37.xxxxx` 항목이 없으면 VS Installer → 수정 → 개별 구성 요소 →  
@@ -1007,7 +1051,7 @@ error: Unable to find a compatible Visual Studio installation.
 
 ```cmd
 :: VS Build Tools의 vcvars64.bat 경로 확인 후 실행
-call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 pip install git+https://github.com/etiennedub/pyk4a.git@1.5.0
@@ -1045,7 +1089,7 @@ performance:
 → Windows CMD에서 vcvars64.bat을 먼저 실행해야 합니다. PowerShell에서는 `call`이 동작하지 않습니다.
 
 ```cmd
-call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 python setup.py develop
