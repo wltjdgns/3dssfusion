@@ -1,9 +1,9 @@
 CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
+    _BASE_CONFIG_: ../dataset_configs/kitti_dataset.yaml
 
-    POINT_CLOUD_RANGE: [-5.0, -5.0, -1.0, 5.0, 5.0, 3.0]
+    POINT_CLOUD_RANGE: [0, -39.68, -3, 69.12, 39.68, 1]
 
     DATA_PROCESSOR:
         - NAME: mask_points_and_boxes_outside_range
@@ -15,11 +15,11 @@ DATA_CONFIG:
               'test': False
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [0.05, 0.05, 0.1]
+          VOXEL_SIZE: [0.16, 0.16, 4]
           MAX_POINTS_PER_VOXEL: 32
           MAX_NUMBER_OF_VOXELS:
               'train': 16000
-              'test': 16000
+              'test': 40000
 
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']

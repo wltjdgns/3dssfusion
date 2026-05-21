@@ -36,8 +36,6 @@ class YOLOv11Detector(BaseDetector):
 
         logger.info(f"[YOLOv11] loading weights: {self.weights}")
         self._model = _YOLO(self.weights).to(self.device)
-        if self.half:
-            self._model.half()
         logger.info("[YOLOv11] model loaded")
 
     # ------------------------------------------------------------------

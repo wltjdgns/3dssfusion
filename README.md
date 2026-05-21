@@ -109,6 +109,8 @@ conda activate kinect_det
 | supervision | 0.23.0 | pip | ByteTrack 추적 |
 | ensemble-boxes | 1.0.9 | pip | Weighted Box Fusion |
 | onnxruntime-gpu | 1.18.1 | pip | ONNX 추론 |
+| psutil | 6.0.0 | conda | 프로세스별 CPU/메모리 모니터링 |
+| nvidia-ml-py | 13.x | pip | GPU 사용률 조회 (NVML 바인딩) |
 
 > **참고**: PyTorch는 conda 채널 대신 pytorch.org 공식 pip wheel을 사용합니다.  
 > 이는 Windows에서 conda 빌드의 `libiomp5md.dll` 버전 불일치로 인한 import 오류를 방지하기 위함입니다.
@@ -435,13 +437,17 @@ depth_model:
     enabled: true
     cfg_file: "third_party/OpenPCDet/tools/cfgs/custom_models/pointpillar_kinect.yaml"
     weights: "weights/pointpillars/pointpillar_7728.pth"
-    point_cloud_range: [-5.0, -5.0, -1.0, 5.0, 5.0, 3.0]  # [xmin,ymin,zmin,xmax,ymax,zmax]
-    voxel_size: [0.05, 0.05, 0.1]    # 복셀 크기 (m)
+    point_cloud_range: [0, -39.68, -3, 69.12, 39.68, 1]  # KITTI 표준 범위 (nz==1 조건 필수)
+    voxel_size: [0.16, 0.16, 4]    # Z 복셀 크기 = Z 범위 전체 → nz = 1
     max_points_per_voxel: 32
     max_voxels: 16000
     score_threshold: 0.3
     nms_threshold: 0.1
 ```
+
+> **중요**: PointPillarScatter는 Z 방향 복셀 수(`nz`)가 정확히 **1**이어야 합니다.  
+> `nz = (zmax - zmin) / voxel_z = (1 - (-3)) / 4 = 1` 이 되도록 KITTI 표준 파라미터를 사용합니다.  
+> 자체 범위를 지정할 경우 `voxel_z`를 `zmax - zmin`과 동일하게 설정해야 합니다.
 
 **Point Cloud 변환 설정:**
 ```yaml
@@ -492,9 +498,9 @@ postprocess:
   visualizer:
     enabled: true
     show_window: true
-    show_depth_colormap: true   # 우측 상단 depth 히트맵 오버레이
+    show_depth_colormap: true   # true: color 절반 + depth colormap 절반 좌우 나란히 표시
     show_fps: true
-    show_gpu_usage: true
+    show_gpu_usage: true        # GPU(시스템 전체%) + VRAM(프로세스별) + CPU(프로세스별) 오버레이
     save_video: false           # true 시 data/results/ 에 영상 저장
     font_scale: 0.6
     line_thickness: 2
@@ -802,14 +808,13 @@ lig/
 ├── postprocess/                     # 후처리 레이어
 │   ├── __init__.py
 │   ├── tracker.py                   # ByteTracker (supervision 기반, IoU 매칭)
-│   ├── visualizer.py                # ResultVisualizer (bbox, depth colormap, FPS 오버레이)
 │   └── logger.py                    # DetectionLogger (JSONL / CSV 저장)
 │
 ├── utils/                           # 공통 유틸리티
 │   ├── __init__.py
 │   ├── config_loader.py             # ConfigLoader: YAML 로드 + drone_extension override
 │   ├── fps_counter.py               # FPSCounter: deque 기반 rolling average
-│   ├── gpu_monitor.py               # GPUMonitor: VRAM / 온도 / 사용률
+│   ├── visualizer.py                # Visualizer: bbox, depth colormap(좌우), FPS/GPU/CPU 오버레이
 │   └── coordinate.py                # kinect_to_lidar / xyxy_to_xywh 등 벡터화 변환
 │
 ├── scripts/                         # 유틸리티 스크립트
@@ -1121,6 +1126,85 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliar
 **`SharedArray 빌드 실패`**
 
 → `sys/mman.h` POSIX 헤더 의존으로 Windows에서는 빌드 불가입니다. 추론에 사용되지 않으므로 무시하고 진행합니다.
+
+---
+
+### PointPillarScatter `assert self.nz == 1` 오류
+
+```
+AssertionError: assert self.nz == 1
+  File ".../pcdet/models/backbones_2d/map_to_bev/pointpillar_scatter.py", line 12
+```
+
+**원인**: PointPillars BEV Scatter는 Z 방향 복셀 수가 정확히 1이어야 합니다.  
+`nz = (zmax - zmin) / voxel_z` 가 1이 아니면 발생합니다.
+
+**해결**: `config.yaml`과 `pointpillar_kinect.yaml` 모두 KITTI 표준 파라미터를 사용합니다:
+
+```yaml
+# config.yaml
+depth_model:
+  pointpillars:
+    point_cloud_range: [0, -39.68, -3, 69.12, 39.68, 1]
+    voxel_size: [0.16, 0.16, 4]   # Z 크기 = 1-(-3) = 4 → nz=1
+
+# pointpillar_kinect.yaml
+POINT_CLOUD_RANGE: [0, -39.68, -3, 69.12, 39.68, 1]
+DATA_PROCESSOR:
+  - NAME: transform_points_to_voxels
+    VOXEL_SIZE: [0.16, 0.16, 4]
+```
+
+---
+
+### `AttributeError: module 'torch.compiler' has no attribute 'is_compiling'`
+
+```
+AttributeError: module 'torch.compiler' has no attribute 'is_compiling'
+```
+
+**원인**: `ultralytics 8.3.40`이 `torch.compiler.is_compiling()`을 호출하지만, `PyTorch 2.1.2`에는 해당 속성이 없습니다 (PyTorch 2.4+에 추가됨).
+
+**해결**: `main.py`에서 import 직후 monkey-patch를 추가합니다:
+
+```python
+import torch
+if not hasattr(torch.compiler, "is_compiling"):
+    torch.compiler.is_compiling = lambda: False
+```
+
+---
+
+### `RuntimeError: expected mat1 and mat2 to have the same dtype, but got: c10::Half != float`
+
+```
+RuntimeError: expected mat1 and mat2 to have the same dtype, but got: struct c10::Half != float
+  File ".../torch/nn/modules/batchnorm.py" (fuse_conv_and_bn 내부)
+```
+
+**원인**: `model.half()`를 모델 로드 시 호출하면 ultralytics 내부의 `fuse_conv_and_bn`이 레이어 dtype 불일치로 실패합니다.
+
+**해결**: `models/rgb/yolov11.py`에서 로드 시 `.half()` 호출을 제거합니다. ultralytics는 `predict()` 호출 시 `half=True` 파라미터로 FP16을 직접 처리합니다:
+
+```python
+def load_model(self) -> None:
+    self._model = _YOLO(self.weights).to(self.device)
+    # self._model.half() ← 이 줄 제거
+```
+
+---
+
+### GPU / VRAM 사용률이 시각화 오버레이에 표시 안 될 때
+
+`show_gpu_usage: true` 설정에도 GPU 정보가 없으면 psutil 또는 nvidia-ml-py가 누락된 것입니다:
+
+```bash
+pip install psutil nvidia-ml-py
+```
+
+- **GPU(sys)%**: 시스템 전체 GPU 사용률 (`torch.cuda.utilization()`)
+- **VRAM(proc)**: 이 프로세스 PyTorch 텐서 점유량 (`torch.cuda.memory_allocated()`)
+- **CPU(proc)%**: 이 프로세스의 전체 코어 대비 CPU 사용률 (`psutil.Process`)
 
 ---
 

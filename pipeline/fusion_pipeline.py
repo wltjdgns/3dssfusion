@@ -41,10 +41,10 @@ class FusionPipeline:
 
     def __init__(self, config: dict) -> None:
         self._cfg = config
-        self._rgb_cfg: dict = config.get("rgb", {})
-        self._depth_cfg: dict = config.get("depth", {})
+        self._rgb_cfg: dict = config.get("rgb_models", {})
+        self._depth_cfg: dict = config.get("depth_model", {})
         self._fusion_cfg: dict = config.get("fusion", {})
-        self._pipeline_cfg: dict = config.get("pipeline", {})
+        self._pipeline_cfg: dict = config.get("performance", {})
 
         self._capture: "KinectCapture | None" = None
         self._calibration: "KinectCalibration | None" = None
@@ -57,11 +57,13 @@ class FusionPipeline:
         self._frame_count: int = 0
         self._last_depth_result: Optional["DetectionResult"] = None
         self._last_points_3d: Optional[np.ndarray] = None
+        self._last_color_frame: Optional[np.ndarray] = None
+        self._last_depth_frame: Optional[np.ndarray] = None
         self._depth_cache_lock = threading.Lock()  # _last_depth_result 동시 접근 보호
 
         self._skip_depth_every_n: int = self._pipeline_cfg.get("skip_depth_every_n", 1)
         self._frame_queue_size: int = self._pipeline_cfg.get("frame_queue_size", 4)
-        self._depth_async: bool = self._depth_cfg.get("inference_async", True)
+        self._depth_async: bool = self._pipeline_cfg.get("depth_inference_async", True)
         self._warmup_frames: int = self._pipeline_cfg.get("warmup_frames", 5)
 
         self._frame_queue: queue.Queue = queue.Queue(maxsize=self._frame_queue_size)
@@ -92,10 +94,9 @@ class FusionPipeline:
         )
 
         # RGB 모델 로드
-        active_models: List[str] = self._rgb_cfg.get("active_models", [])
-        models_cfg: dict = self._rgb_cfg.get("models", {})
+        active_models: List[str] = self._rgb_cfg.get("active", [])
         for name in active_models:
-            det = _build_rgb_detector(name, models_cfg.get(name, {}))
+            det = _build_rgb_detector(name, self._rgb_cfg.get(name, {}))
             det.load()
             self._rgb_detectors.append(det)
             logger.info(f"RGB 모델 로드: {name}")
@@ -127,9 +128,22 @@ class FusionPipeline:
 
     def run(self) -> None:
         """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        from utils.visualizer import Visualizer
         self.setup()
-        for _ in self.run_stream():
-            pass
+        vis_cfg = self._cfg.get("postprocess", {}).get("visualizer", {})
+        vis = Visualizer(vis_cfg)
+        try:
+            for result in self.run_stream():
+                fps = self._fps_counter.fps if self._fps_counter else 0.0
+                if not vis.render(
+                    self._last_color_frame,
+                    result,
+                    depth=self._last_depth_frame,
+                    fps=fps,
+                ):
+                    break
+        finally:
+            vis.close()
 
     def cleanup(self) -> None:
         """shutdown()의 별칭."""
@@ -141,6 +155,8 @@ class FusionPipeline:
 
         frame = self._capture.get_frame()
         self._frame_count += 1
+        self._last_color_frame = frame.color
+        self._last_depth_frame = frame.depth
         image_shape = (frame.color.shape[0], frame.color.shape[1])
 
         # Depth 스킵 여부 판단

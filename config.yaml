@@ -57,8 +57,8 @@ depth_model:
     enabled: true
     cfg_file: "third_party/OpenPCDet/tools/cfgs/custom_models/pointpillar_kinect.yaml"
     weights: "weights/pointpillars/pointpillar_7728.pth"
-    point_cloud_range: [-5.0, -5.0, -1.0, 5.0, 5.0, 3.0]
-    voxel_size: [0.05, 0.05, 0.1]
+    point_cloud_range: [0, -39.68, -3, 69.12, 39.68, 1]
+    voxel_size: [0.16, 0.16, 4]
     max_points_per_voxel: 32
     max_voxels: 16000
     score_threshold: 0.3

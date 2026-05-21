@@ -10,7 +10,7 @@ from loguru import logger
 
 try:
     import pyk4a
-    from pyk4a import PyK4A, CalibrationType
+    from pyk4a import PyK4A, CalibrationType, ColorResolution, DepthMode
 except ImportError as e:
     raise ImportError(
         "pyk4a를 import할 수 없습니다. pip install pyk4a==1.4.1 을 실행하세요.\n"
@@ -35,40 +35,65 @@ class ExtrinsicTransform:
     translation: np.ndarray  # (3,) mm
 
 
-def _extract_intrinsics(raw_cam_calib) -> CameraIntrinsics:
-    """pyk4a raw calibration 구조체에서 CameraIntrinsics를 추출합니다."""
-    params = raw_cam_calib.intrinsics.parameters.param
+_COLOR_RES_WH: dict = {
+    ColorResolution.RES_720P:  (1280, 720),
+    ColorResolution.RES_1080P: (1920, 1080),
+    ColorResolution.RES_1440P: (2560, 1440),
+    ColorResolution.RES_1536P: (2048, 1536),
+    ColorResolution.RES_2160P: (3840, 2160),
+    ColorResolution.RES_3072P: (4096, 3072),
+}
+
+_DEPTH_MODE_WH: dict = {
+    DepthMode.NFOV_2X2BINNED: (320, 288),
+    DepthMode.NFOV_UNBINNED:  (640, 576),
+    DepthMode.WFOV_2X2BINNED: (512, 512),
+    DepthMode.WFOV_UNBINNED:  (1024, 1024),
+    DepthMode.PASSIVE_IR:     (1024, 1024),
+}
+
+
+def _calib_to_intrinsics(
+    calib, cam_type: CalibrationType, width: int, height: int
+) -> CameraIntrinsics:
+    K = calib.get_camera_matrix(cam_type)
+    dist = calib.get_distortion_coefficients(cam_type)  # (8,) [k1,k2,p1,p2,k3,k4,k5,k6]
+    d8 = np.zeros(8, dtype=np.float64)
+    d8[: len(dist)] = dist
     return CameraIntrinsics(
-        fx=float(params.fx),
-        fy=float(params.fy),
-        cx=float(params.cx),
-        cy=float(params.cy),
-        width=int(raw_cam_calib.resolution_width),
-        height=int(raw_cam_calib.resolution_height),
-        dist_coeffs=np.array(
-            [params.k1, params.k2, params.p1, params.p2,
-             params.k3, params.k4, params.k5, params.k6],
-            dtype=np.float64,
-        ),
+        fx=float(K[0, 0]),
+        fy=float(K[1, 1]),
+        cx=float(K[0, 2]),
+        cy=float(K[1, 2]),
+        width=width,
+        height=height,
+        dist_coeffs=d8,
     )
-
-
-def _extract_extrinsics(raw_calib, from_type: CalibrationType, to_type: CalibrationType) -> ExtrinsicTransform:
-    """pyk4a raw calibration 구조체에서 from→to 외부 파라미터를 추출합니다."""
-    ext = raw_calib.extrinsics[from_type.value][to_type.value]
-    R = np.array(ext.rotation, dtype=np.float64).reshape(3, 3)
-    t = np.array(ext.translation, dtype=np.float64)  # mm
-    return ExtrinsicTransform(rotation=R, translation=t)
 
 
 class KinectCalibration:
     """Azure Kinect 캘리브레이션 파라미터 관리 및 좌표 변환."""
 
     def __init__(self, device: PyK4A) -> None:
-        self._raw = device.calibration._calibration
-        self._color_intrinsics: Optional[CameraIntrinsics] = None
-        self._depth_intrinsics: Optional[CameraIntrinsics] = None
-        self._depth_to_color_ext: Optional[ExtrinsicTransform] = None
+        calib = device.calibration
+
+        color_w, color_h = _COLOR_RES_WH[calib.color_resolution]
+        depth_w, depth_h = _DEPTH_MODE_WH[calib.depth_mode]
+
+        self._color_intrinsics: Optional[CameraIntrinsics] = _calib_to_intrinsics(
+            calib, CalibrationType.COLOR, color_w, color_h
+        )
+        self._depth_intrinsics: Optional[CameraIntrinsics] = _calib_to_intrinsics(
+            calib, CalibrationType.DEPTH, depth_w, depth_h
+        )
+
+        R, t = calib.get_extrinsic_parameters(CalibrationType.DEPTH, CalibrationType.COLOR)
+        # get_extrinsic_parameters returns translation in metres; ExtrinsicTransform stores mm
+        self._depth_to_color_ext: Optional[ExtrinsicTransform] = ExtrinsicTransform(
+            rotation=R,
+            translation=t.flatten() * 1000.0,
+        )
+
         logger.debug("KinectCalibration 초기화 완료.")
 
     # ------------------------------------------------------------------
@@ -77,28 +102,14 @@ class KinectCalibration:
 
     @property
     def color_intrinsics(self) -> CameraIntrinsics:
-        if self._color_intrinsics is None:
-            self._color_intrinsics = _extract_intrinsics(
-                self._raw.color_camera_calibration
-            )
         return self._color_intrinsics
 
     @property
     def depth_intrinsics(self) -> CameraIntrinsics:
-        if self._depth_intrinsics is None:
-            self._depth_intrinsics = _extract_intrinsics(
-                self._raw.depth_camera_calibration
-            )
         return self._depth_intrinsics
 
     @property
     def depth_to_color_extrinsics(self) -> ExtrinsicTransform:
-        if self._depth_to_color_ext is None:
-            self._depth_to_color_ext = _extract_extrinsics(
-                self._raw,
-                from_type=CalibrationType.DEPTH,
-                to_type=CalibrationType.COLOR,
-            )
         return self._depth_to_color_ext
 
     # ------------------------------------------------------------------
@@ -273,7 +284,6 @@ class KinectCalibration:
             ) from e
 
         obj = object.__new__(cls)
-        obj._raw = None
         obj._color_intrinsics = _parse_intrinsics(data["color_intrinsics"])
         obj._depth_intrinsics = _parse_intrinsics(data["depth_intrinsics"])
         ext_data = data["depth_to_color_extrinsics"]

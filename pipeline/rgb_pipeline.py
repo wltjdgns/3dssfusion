@@ -43,13 +43,15 @@ class RGBPipeline:
 
     def __init__(self, config: dict) -> None:
         self._cfg = config
-        self._rgb_cfg: dict = config.get("rgb", {})
+        self._rgb_cfg: dict = config.get("rgb_models", {})
         self._fusion_cfg: dict = config.get("fusion", {})
+        self._perf_cfg: dict = config.get("performance", {})
 
         self._capture: "KinectCapture | None" = None
         self._detectors: List["BaseDetector"] = []
         self._fps_counter = None
-        self._parallel: bool = self._rgb_cfg.get("inference_parallel", False)
+        self._last_color_frame: Optional[np.ndarray] = None
+        self._parallel: bool = self._perf_cfg.get("rgb_inference_parallel", False)
         self._nms_iou: float = self._fusion_cfg.get("iou_threshold", 0.5)
         # ThreadPoolExecutor를 매 프레임마다 재생성하지 않도록 setup()에서 한 번만 생성
         self._executor: Optional[ThreadPoolExecutor] = None
@@ -66,12 +68,10 @@ class RGBPipeline:
         self._capture.open()
 
         # 활성 모델 로드
-        active_models: List[str] = self._rgb_cfg.get("active_models", [])
-        models_cfg: dict = self._rgb_cfg.get("models", {})
+        active_models: List[str] = self._rgb_cfg.get("active", [])
 
         for model_name in active_models:
-            model_cfg = models_cfg.get(model_name, {})
-            det = _build_detector(model_name, model_cfg)
+            det = _build_detector(model_name, self._rgb_cfg.get(model_name, {}))
             det.load()
             self._detectors.append(det)
             logger.info(f"모델 로드 완료: {model_name}")
@@ -90,6 +90,7 @@ class RGBPipeline:
         from fusion.nms import nms_2d
 
         frame = self._capture.get_frame()
+        self._last_color_frame = frame.color
         color_img = frame.color
 
         results: List["DetectionResult"] = []
@@ -136,9 +137,17 @@ class RGBPipeline:
 
     def run(self) -> None:
         """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        from utils.visualizer import Visualizer
         self.setup()
-        for _ in self.run_stream():
-            pass
+        vis_cfg = self._cfg.get("postprocess", {}).get("visualizer", {})
+        vis = Visualizer(vis_cfg)
+        try:
+            for result in self.run_stream():
+                fps = self._fps_counter.fps if self._fps_counter else 0.0
+                if not vis.render(self._last_color_frame, result, fps=fps):
+                    break
+        finally:
+            vis.close()
 
     def cleanup(self) -> None:
         """shutdown()의 별칭."""

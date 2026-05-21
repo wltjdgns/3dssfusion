@@ -97,7 +97,7 @@ class KinectCapture:
 
     def open(self) -> None:
         k4a_config = _build_config(self._config_dict)
-        device_id = int(self._config_dict.get("device_id", 0))
+        device_id = int(self._config_dict.get("device_index", self._config_dict.get("device_id", 0)))
 
         logger.info(f"Azure Kinect 장치 #{device_id} 연결 시도...")
         try:
@@ -143,7 +143,7 @@ class KinectCapture:
             color=bgr,
             depth=capture.depth,
             ir=capture.ir,
-            timestamp_usec=int(capture.device_timestamp_usec),
+            timestamp_usec=int(capture.color_timestamp_usec),
             device_temp=device_temp,
             frame_id=self._frame_id,
         )

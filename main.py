@@ -1,3 +1,10 @@
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+import torch
+if not hasattr(torch.compiler, "is_compiling"):
+    torch.compiler.is_compiling = lambda: False
+
 import argparse
 import sys
 from pathlib import Path
@@ -23,7 +30,7 @@ class ConfigLoader:
         path = Path(config_path)
         if not path.exists():
             raise FileNotFoundError(f"Config not found: {config_path}")
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             self._cfg = yaml.safe_load(f)
 
     def override_mode(self, mode: str | None) -> None:

@@ -39,6 +39,7 @@ dependencies:
     - omegaconf==2.3.0
     - shapely==2.0.6
     - onnxruntime-gpu==1.18.1
+    - nvidia-ml-py==13.595.45
     # sahi deps (installed separately since sahi itself conflicts with opencv-python-headless)
     - pybboxes==0.1.6
     - terminaltables

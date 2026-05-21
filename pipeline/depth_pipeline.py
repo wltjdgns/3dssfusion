@@ -20,7 +20,7 @@ class DepthPipeline:
 
     def __init__(self, config: dict) -> None:
         self._cfg = config
-        self._depth_cfg: dict = config.get("depth", {})
+        self._depth_cfg: dict = config.get("depth_model", {})
 
         self._capture: "KinectCapture | None" = None
         self._converter: "PointCloudConverter | None" = None
@@ -50,6 +50,8 @@ class DepthPipeline:
         self._detector.load()
 
         self._fps_counter = FPSCounter()
+        self._last_color_frame = None
+        self._last_depth_frame = None
         logger.info("DepthPipeline setup 완료")
 
     def run_once(self) -> "DetectionResult":
@@ -57,6 +59,8 @@ class DepthPipeline:
         from models import Detection, DetectionResult
 
         frame = self._capture.get_frame()
+        self._last_color_frame = frame.color
+        self._last_depth_frame = frame.depth
         point_cloud = self._converter.convert(frame.depth, frame.color)
 
         result: "DetectionResult" = self._detector.detect(point_cloud)
@@ -82,9 +86,22 @@ class DepthPipeline:
 
     def run(self) -> None:
         """파이프라인을 설정하고 스트리밍 루프를 실행합니다."""
+        from utils.visualizer import Visualizer
         self.setup()
-        for _ in self.run_stream():
-            pass
+        vis_cfg = self._cfg.get("postprocess", {}).get("visualizer", {})
+        vis = Visualizer(vis_cfg)
+        try:
+            for result in self.run_stream():
+                fps = self._fps_counter.fps if self._fps_counter else 0.0
+                if not vis.render(
+                    self._last_color_frame,
+                    result,
+                    depth=self._last_depth_frame,
+                    fps=fps,
+                ):
+                    break
+        finally:
+            vis.close()
 
     def cleanup(self) -> None:
         """shutdown()의 별칭."""
@@ -143,8 +160,8 @@ class DepthPipeline:
         X_cam, Y_cam, Z_cam = X_cam[valid], Y_cam[valid], Z_cam[valid]
 
         intrinsics = self._calibration.depth_intrinsics
-        u = intrinsics["fx"] * (X_cam / Z_cam) + intrinsics["cx"]
-        v = intrinsics["fy"] * (Y_cam / Z_cam) + intrinsics["cy"]
+        u = intrinsics.fx * (X_cam / Z_cam) + intrinsics.cx
+        v = intrinsics.fy * (Y_cam / Z_cam) + intrinsics.cy
 
         return np.array(
             [u.min(), v.min(), u.max(), v.max()], dtype=np.float32
